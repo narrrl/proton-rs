@@ -12,7 +12,7 @@ follow semantic versioning.
   apps share. Same stored session, same messages, and still never Proton's
   own text. A failed key unlock can still be retried on the same session.
 
-## proton-auth-rs [0.1.1] - Unreleased
+## proton-auth-rs [0.1.1] - 2026-11-20
 
 ### Added
 
