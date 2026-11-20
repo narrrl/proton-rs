@@ -145,7 +145,11 @@ impl DiskCache {
 
     /// Read a block back, or `None` when it is absent or fails validation.
     pub async fn get(&self, key: &BlockId<'_>) -> Option<Vec<u8>> {
-        let path = self.block_path(key);
+        self.get_at(self.block_path(key)).await
+    }
+
+    /// [`DiskCache::get`] for an entry already resolved to its path.
+    pub(crate) async fn get_at(&self, path: PathBuf) -> Option<Vec<u8>> {
         match read_entry(&path).await {
             Ok(Some(block)) => {
                 let mut index = self.lock();
@@ -182,12 +186,16 @@ impl DiskCache {
     /// Store a block. Failures are logged and swallowed: a cache that cannot be
     /// written is a slower app, not a broken one.
     pub async fn put(&self, key: &BlockId<'_>, block: &[u8]) {
+        self.put_at(self.block_path(key), block).await;
+    }
+
+    /// [`DiskCache::put`] for an entry already resolved to its path.
+    pub(crate) async fn put_at(&self, path: PathBuf, block: &[u8]) {
         let len = block.len() as u64;
         if len > self.budget() {
             return;
         }
 
-        let path = self.block_path(key);
         if let Err(e) = write_entry(&path, block).await {
             tracing::warn!(path = %path.display(), error = %e, "could not cache block to disk");
             self.discard(&path).await;
@@ -272,17 +280,20 @@ impl DiskCache {
     /// Where `key` lives: `{root}/{aa}/{hash}/b{index}` — two levels of fan-out so a large library
     /// does not put tens of thousands of entries in one directory.
     pub fn block_path(&self, key: &BlockId<'_>) -> PathBuf {
+        self.entry_path(key.file, key.revision, &format!("b{}", key.index))
+    }
+
+    /// `{root}/{aa}/{sha256(file + "\0" + revision)}/{name}`. `name` must have
+    /// no extension: the startup scan reads those as sidecars.
+    pub(crate) fn entry_path(&self, file: &str, revision: &str, name: &str) -> PathBuf {
         let mut hasher = Sha256::new();
-        hasher.update(key.file.as_bytes());
+        hasher.update(file.as_bytes());
         hasher.update(b"\0");
-        hasher.update(key.revision.as_bytes());
+        hasher.update(revision.as_bytes());
         let digest = hasher.finalize();
         let hash = hex(&digest);
 
-        self.root
-            .join(&hash[..2])
-            .join(&hash)
-            .join(format!("b{}", key.index))
+        self.root.join(&hash[..2]).join(&hash).join(name)
     }
 
     fn lock(&self) -> std::sync::MutexGuard<'_, Index> {
@@ -296,7 +307,7 @@ fn meta_path(block: &Path) -> PathBuf {
     PathBuf::from(name)
 }
 
-fn hex(bytes: &[u8]) -> String {
+pub(crate) fn hex(bytes: &[u8]) -> String {
     use std::fmt::Write;
     bytes.iter().fold(String::new(), |mut out, byte| {
         let _ = write!(out, "{byte:02x}");

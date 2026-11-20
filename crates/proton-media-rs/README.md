@@ -14,6 +14,13 @@ sizes, byte ranges and string identities, not on Proton types.
   as short data. Paths are `sha256(file + revision)`, so names never reach the
   disk and a new revision never reads an old one's bytes. Entries left by a
   previous run are adopted on open.
+- **`SingleFlight::join`**: the same for values that carry their own outcome:
+  every caller gets the leader's typed result, and a waiter whose leader is
+  cancelled does the work itself.
+- **`ImageCache`**: the same disk guarantees for encoded pictures (thumbnails,
+  previews, posters), keyed by source, version and variant.
+- **`render`** (feature `image`): decode with limits, apply EXIF orientation,
+  shrink to fit, re-encode as JPEG (PNG when transparent).
 
 ```rust
 use proton_media_rs::BlockMap;
