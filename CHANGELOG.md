@@ -4,6 +4,28 @@ All notable changes to this workspace are documented here. The format follows
 [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/) and the crates
 follow semantic versioning.
 
+## proton-gallery-drive-rs [0.1.2] - Unreleased
+
+### Changed
+
+- Signing in runs through `proton_sdk::login` (proton-sdk 0.12.2), where the
+  sequence from `proton_auth_rs::session` now lives. Same stored session, same
+  messages, still never Proton's own text. The crate no longer depends on
+  proton-auth-rs.
+
+## proton-auth-rs [0.1.2] - Unreleased
+
+### Deprecated
+
+- The `session` module. Its sign-in steps moved into the SDK as
+  `proton_sdk::login` (proton-sdk 0.12.2): `begin`, `Step`, `Pending`,
+  `Unlocked` and `LoginError` (was `SignInError`). `SessionTokens` is replaced
+  by the SDK's `ResumeParameters`, built with
+  `ProtonApiSession::resume_parameters`; the password-mode numbers by
+  `PasswordMode::to_wire`/`from_wire`; `verification_token` by
+  `HumanVerification::token_from_message`. The module stays, unchanged, until
+  0.2.0 removes it.
+
 ## proton-gallery-drive-rs [0.1.1] - 2026-11-20
 
 ### Changed

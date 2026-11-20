@@ -1,13 +1,13 @@
 //! Single-account authentication. Passwords live only in a pending attempt;
 //! only tokens and derived key passphrases enter the platform secret vault.
-use proton_auth_rs::session::{self, SessionTokens, SignInError, Step};
 use proton_drive_rs::ProtonDriveClient;
 use proton_gallery_rs::{CancellationToken, model::AccountId};
 use proton_sdk::{
     api::{HumanVerificationCredential, ResponseCode},
     error::ProtonError,
     http::Tokens,
-    session::ProtonApiSession,
+    login::{self, LoginError, Step},
+    session::{PasswordMode, ProtonApiSession, ResumeParameters},
 };
 use serde::{Deserialize, Serialize};
 use std::{
@@ -79,18 +79,18 @@ impl Saved {
         {
             return Err(AuthError("This saved session needs a fresh sign-in."));
         }
-        let tokens = SessionTokens {
-            session_id: self.session_id.clone(),
+        let params = ResumeParameters {
+            session_id: self.session_id.clone().into(),
             username: self.username.clone(),
-            user_id: self.user_id.clone(),
+            user_id: self.user_id.clone().into(),
             access_token: self.access_token.clone(),
             refresh_token: self.refresh_token.clone(),
             scopes: self.scopes.clone(),
-            password_mode: session::password_mode_from_wire(self.password_mode),
+            is_waiting_for_second_factor_code: false,
+            password_mode: PasswordMode::from_wire(self.password_mode.into()),
         };
-        let session =
-            ProtonApiSession::resume(super::client_configuration(), tokens.resume_parameters())
-                .map_err(|_| AuthError("The saved session couldn’t be restored. Sign in again."))?;
+        let session = ProtonApiSession::resume(super::client_configuration(), params)
+            .map_err(|_| AuthError("The saved session couldn’t be restored. Sign in again."))?;
         let drive = ProtonDriveClient::with_key_passphrases(
             &session,
             self.key_passphrases
@@ -112,7 +112,7 @@ struct Gate {
 }
 #[derive(Default)]
 struct State {
-    pending: Option<session::Pending>,
+    pending: Option<login::Pending>,
     verification: Option<(String, Zeroizing<Vec<u8>>)>,
     account: Option<Account>,
 }
@@ -336,7 +336,7 @@ impl AuthService {
         let cancel = self.cancel.read().unwrap().clone();
         let result = bounded(
             &cancel,
-            session::begin(
+            login::begin(
                 super::client_configuration(),
                 &username,
                 text,
@@ -349,7 +349,7 @@ impl AuthService {
         }
         match result {
             Ok(Ok(step)) => self.enter(&mut state, step, &cancel).await,
-            Ok(Err(SignInError::HumanVerification(challenge))) => {
+            Ok(Err(LoginError::HumanVerification(challenge))) => {
                 // Construct a captcha-only URL; never interpolate server method names into URLs.
                 let challenge = proton_sdk::api::HumanVerification {
                     token: challenge.token,
@@ -435,7 +435,7 @@ impl AuthService {
                 None => pending.unlock().await,
                 Some(password) => match std::str::from_utf8(password) {
                     Ok(password) => pending.mailbox_password(password).await,
-                    Err(_) => Err(SignInError::WrongMailboxPassword),
+                    Err(_) => Err(LoginError::WrongMailboxPassword),
                 },
             }
         })
@@ -450,16 +450,17 @@ impl AuthService {
                     .map_err(|_| friendly(&ProtonError::invalid_operation("invalid derived key")))
             })
             .collect::<Result<HashMap<_, _>>>()?;
-        let tokens = unlocked.tokens().await;
+        let params = unlocked.resume_parameters().await;
         let saved = Saved {
             version: 1,
-            password_mode: session::password_mode_to_wire(tokens.password_mode),
-            session_id: tokens.session_id,
-            username: tokens.username,
-            user_id: tokens.user_id,
-            access_token: tokens.access_token,
-            refresh_token: tokens.refresh_token,
-            scopes: tokens.scopes,
+            // Proton's numbers are 1 and 2.
+            password_mode: params.password_mode.to_wire() as u8,
+            session_id: params.session_id.as_str().to_owned(),
+            username: params.username,
+            user_id: params.user_id.as_str().to_owned(),
+            access_token: params.access_token,
+            refresh_token: params.refresh_token,
+            scopes: params.scopes,
             key_passphrases,
         };
         let (resumed, drive) = saved.restore()?;
@@ -506,21 +507,21 @@ pub fn cause_chain(error: &dyn std::error::Error) -> String {
 }
 
 /// A failed sign-in step as a fixed message. Never the server's own text,
-/// which is what [`SignInError::Rejected`] carries.
-fn refused(error: &SignInError) -> AuthError {
+/// which is what [`LoginError::Rejected`] carries.
+fn refused(error: &LoginError) -> AuthError {
     match error {
-        SignInError::Proton(error) => friendly(error),
-        SignInError::SecurityKeyOnly => AuthError(
+        LoginError::Proton(error) => friendly(error),
+        LoginError::SecurityKeyOnly => AuthError(
             "This account requires a security key. Enable an authenticator app in Proton settings to sign in here.",
         ),
-        SignInError::Blocked(_) => AuthError(
+        LoginError::Blocked(_) => AuthError(
             "Proton blocked this sign-in attempt. Try again later or check your account in Proton’s app.",
         ),
-        SignInError::WrongCode(_) => {
+        LoginError::WrongCode(_) => {
             AuthError("The code wasn’t accepted. Sign in again with a fresh code.")
         }
-        SignInError::WrongMailboxPassword => friendly(&ProtonError::KeysLocked),
-        SignInError::HumanVerification(_) => {
+        LoginError::WrongMailboxPassword => friendly(&ProtonError::KeysLocked),
+        LoginError::HumanVerification(_) => {
             AuthError("Proton requires a verification method this app doesn’t support yet.")
         }
         _ => AuthError("Sign-in couldn’t be completed. Check your details and try again."),
@@ -690,9 +691,9 @@ mod tests {
             message: message.into(),
             details: None,
         };
-        let e = SignInError::Rejected(api(ResponseCode::Unknown, "secret server text"));
+        let e = LoginError::Rejected(api(ResponseCode::Unknown, "secret server text"));
         assert!(!refused(&e).to_string().contains("secret"));
-        let blocked = SignInError::Blocked(api(ResponseCode::Blocked, "secret"));
+        let blocked = LoginError::Blocked(api(ResponseCode::Blocked, "secret"));
         assert!(refused(&blocked).to_string().contains("blocked"));
     }
     #[tokio::test]
