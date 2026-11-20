@@ -4,7 +4,7 @@ All notable changes to this workspace are documented here. The format follows
 [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/) and the crates
 follow semantic versioning.
 
-## proton-auth-rs [0.1.1] - Unreleased
+## proton-auth-rs [0.1.1] - 2026-11-20
 
 ### Added
 
