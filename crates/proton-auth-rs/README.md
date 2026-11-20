@@ -14,6 +14,8 @@ Proton Gallery, Proton Stream).
   - On the Secret Service, a changed secret is written as a new item that
     replaces the old one, because oo7 before 0.7.0 keeps an edited secret only
     in memory.
+  On Linux this links libdbus: building needs `libdbus-1-dev` (Debian/Ubuntu)
+  or `dbus-devel` (Fedora) and `pkg-config`.
 - `Chunked`: splits a value too long for one entry (Windows caps an entry at
   1280 UTF-16 units) across several.
 - `MemoryStore`: secrets for this process only.
