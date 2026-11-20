@@ -108,6 +108,60 @@ where
         }
     }
 
+    /// Run `work` for `key`, or take the result of the call already running it.
+    ///
+    /// For values that carry their own outcome — typically a `Result` whose
+    /// error is `Clone` — so every caller gets the leader's typed result rather
+    /// than a [`Shared`] message. A waiter whose leader is cancelled before it
+    /// publishes runs `work` itself instead of failing; it does not take over
+    /// the key, so a burst of cancellations cannot chain into each other.
+    pub async fn join<F, Fut>(self: &Arc<Self>, key: K, work: F) -> V
+    where
+        F: FnOnce() -> Fut,
+        Fut: Future<Output = V>,
+    {
+        let role = {
+            let mut calls = self.lock();
+            match calls.get(&key) {
+                Some(receiver) => Role::Waiter(receiver.clone()),
+                None => {
+                    let (sender, receiver) = watch::channel(None);
+                    calls.insert(key.clone(), receiver);
+                    Role::Leader(sender)
+                }
+            }
+        };
+
+        match role {
+            Role::Leader(sender) => {
+                let guard = LeaderGuard {
+                    flight: Arc::clone(self),
+                    key: Some(key),
+                };
+                let value = work().await;
+                // Retire the key before publishing, so a caller woken by the
+                // send that comes straight back starts a fresh call instead of
+                // joining a finished one.
+                drop(guard);
+                let _ = sender.send(Some(Ok(value.clone())));
+                value
+            }
+
+            Role::Waiter(mut receiver) => {
+                loop {
+                    let seen = receiver.borrow_and_update().clone();
+                    if let Some(Ok(value)) = seen {
+                        return value;
+                    }
+                    if receiver.changed().await.is_err() {
+                        break;
+                    }
+                }
+                work().await
+            }
+        }
+    }
+
     fn lock(&self) -> std::sync::MutexGuard<'_, HashMap<K, watch::Receiver<Outcome<V>>>> {
         // A panicking caller must not wedge every future call on this key. The
         // map is a plain index with no invariant a panic could break.
@@ -264,6 +318,66 @@ mod tests {
             .await
             .expect("retry");
         assert_eq!(second, 9);
+    }
+
+    /// `join` hands every caller the leader's typed result, error included.
+    #[tokio::test]
+    async fn join_shares_the_typed_result() {
+        let flight: Arc<SingleFlight<u32, Result<u32, u8>>> = Arc::new(SingleFlight::new());
+        let runs = Arc::new(AtomicUsize::new(0));
+        let gate = Arc::new(tokio::sync::Notify::new());
+
+        let mut handles = Vec::new();
+        for _ in 0..4 {
+            let flight = Arc::clone(&flight);
+            let runs = Arc::clone(&runs);
+            let gate = Arc::clone(&gate);
+            handles.push(tokio::spawn(async move {
+                flight
+                    .join(3, || async {
+                        runs.fetch_add(1, Ordering::SeqCst);
+                        gate.notified().await;
+                        Err(7)
+                    })
+                    .await
+            }));
+        }
+        tokio::task::yield_now().await;
+        gate.notify_waiters();
+
+        for handle in handles {
+            assert_eq!(handle.await.expect("join"), Err(7));
+        }
+        assert_eq!(runs.load(Ordering::SeqCst), 1, "work ran more than once");
+        assert!(flight.lock().is_empty(), "entry outlived the call");
+    }
+
+    /// A `join` waiter whose leader is dropped does the work itself.
+    #[tokio::test]
+    async fn join_waiter_of_a_cancelled_leader_runs_the_work() {
+        let flight: Arc<SingleFlight<u32, u32>> = Arc::new(SingleFlight::new());
+
+        let leader = {
+            let flight = Arc::clone(&flight);
+            tokio::spawn(async move {
+                flight
+                    .join(1, || async {
+                        std::future::pending::<()>().await;
+                        0
+                    })
+                    .await
+            })
+        };
+        tokio::task::yield_now().await;
+        let waiter = {
+            let flight = Arc::clone(&flight);
+            tokio::spawn(async move { flight.join(1, || async { 11 }).await })
+        };
+        tokio::task::yield_now().await;
+        leader.abort();
+
+        assert_eq!(waiter.await.expect("join"), 11);
+        assert!(flight.lock().is_empty());
     }
 
     /// A dropped leader must not leave the key marked in-flight forever — the

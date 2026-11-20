@@ -4,6 +4,18 @@ All notable changes to this workspace are documented here. The format follows
 [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/) and the crates
 follow semantic versioning.
 
+## proton-media-rs [0.1.1] - Unreleased
+
+### Added
+
+- `ImageCache`: persistent picture cache (thumbnails, previews, posters) on
+  the `DiskCache` guarantees, keyed by source, version and variant.
+- `render` (feature `image`): decode with limits, EXIF orientation, fit to a
+  box, encode as JPEG or PNG. Replaces three per-app copies.
+- `SingleFlight::join`: shares the leader's typed result; a waiter whose
+  leader is cancelled runs the work itself (proton-drive-linux's block fetch).
+- `Error::Image`.
+
 ## proton-media-rs [0.1.0] - 2026-11-20
 
 ### Added

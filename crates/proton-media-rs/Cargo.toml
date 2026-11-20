@@ -1,7 +1,7 @@
 [package]
 name = "proton-media-rs"
-description = "Media plumbing for Proton Drive apps: block range maps, single-flight fetches and a crash-safe, byte-budgeted disk block cache"
-version = "0.1.0"
+description = "Media plumbing for Proton Drive apps: block range maps, single-flight fetches, crash-safe byte-budgeted disk caches for blocks and pictures, thumbnail rendering"
+version = "0.1.1"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
@@ -11,7 +11,12 @@ keywords = ["proton", "cache", "streaming", "single-flight"]
 categories = ["caching", "multimedia"]
 readme = "README.md"
 
+[features]
+## Decode, orient, shrink and encode pictures (`render`).
+image = ["dep:image"]
+
 [dependencies]
+image = { version = "0.25.6", optional = true, default-features = false, features = ["jpeg", "png", "webp"] }
 lru = "0.18"
 sha2.workspace = true
 thiserror.workspace = true
