@@ -575,8 +575,8 @@ impl Catalog {
                 if let Some(gallery) = gallery
                     && !settings.hidden
                     && !has_hidden_ancestor(&tx, &gallery, source.as_str())?
-                    && !resolve_cover(&tx, &gallery, source.as_str(), Some(cover), settings.order, false)?
-                        .is_some_and(|asset| asset.key == *cover)
+                    && resolve_cover(&tx, &gallery, source.as_str(), Some(cover), settings.order, false)?
+                        .is_none_or(|asset| asset.key != *cover)
                 {
                     return Err(Error::Invalid("a hidden item cannot be the cover of a visible album".into()));
                 }
