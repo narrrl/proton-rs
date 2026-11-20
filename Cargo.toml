@@ -21,7 +21,7 @@ categories = ["multimedia::images", "database"]
 [workspace.dependencies]
 # Internal crates. Each carries a version so it can be published; consumers
 # get them from crates.io.
-proton-gallery-rs = { path = "crates/proton-gallery-rs", version = "0.1.0" }
+proton-gallery-rs = { path = "crates/proton-gallery-rs", version = "0.1.1" }
 proton-gallery-drive-rs = { path = "crates/proton-gallery-drive-rs", version = "0.1.0" }
 proton-gallery-app-rs = { path = "crates/proton-gallery-app-rs", version = "0.1.0" }
 
@@ -46,6 +46,8 @@ tracing = "0.1"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "signal"] }
 tokio-util = { version = "0.7", features = ["rt"] }
 zeroize = "1"
+# Google Takeout exports are zip sets, read without extracting to disk.
+zip = { version = "9", default-features = false, features = ["deflate"] }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"
