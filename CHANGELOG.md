@@ -10,8 +10,9 @@ follow semantic versioning.
 
 - `session` (feature `session`): one copy of the sign-in sequence the apps
   each had: `begin` (with an optional CAPTCHA credential),
-  `Pending::second_factor`, `Pending::mailbox_password` (retryable), and
-  `Unlocked` with the key passphrases and salts. `SignInError` separates
+  `Pending::second_factor`, then `Pending::mailbox_password` or
+  `Pending::unlock` (both retryable on the same session), giving `Unlocked`
+  with the key passphrases and salts. `SignInError` separates
   CAPTCHA gates, security-key-only accounts, blocked sign-ins, refused
   passwords, wrong codes and wrong mailbox passwords. `SessionTokens` with
   `capture` and `resume_parameters`, the password-mode wire mapping, and

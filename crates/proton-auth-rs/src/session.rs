@@ -16,18 +16,19 @@
 //! use proton_auth_rs::session::{self, Step};
 //!
 //! let mut step = session::begin(config, "user@proton.me", "password", None).await?;
-//! loop {
+//! let unlocked = loop {
 //!     step = match step {
 //!         Step::SecondFactor(pending) => pending.second_factor("123456").await?,
-//!         Step::MailboxPassword(pending) => Step::Unlocked(pending.mailbox_password("mailbox").await?),
-//!         Step::Unlocked(unlocked) => {
-//!             let tokens = unlocked.tokens().await;
-//!             // Store `tokens` and `unlocked.key_passphrases`, then keep them
-//!             // current from `unlocked.session.http().set_on_tokens_refreshed`.
-//!             break;
+//!         Step::MailboxPassword(pending) => {
+//!             let unlocked = pending.mailbox_password("mailbox").await?;
+//!             break unlocked;
 //!         }
+//!         Step::Unlock(pending) => break pending.unlock().await?,
 //!     };
-//! }
+//! };
+//! let tokens = unlocked.tokens().await;
+//! // Store `tokens` and `unlocked.key_passphrases`, then keep them current
+//! // from `unlocked.session.http().set_on_tokens_refreshed`.
 //! # Ok(()) }
 //! ```
 
@@ -79,13 +80,19 @@ pub enum SignInError {
 }
 
 /// Where a sign-in stands.
+///
+/// Every sign-in ends with a call that unlocks the keys by reference,
+/// [`Pending::mailbox_password`] or [`Pending::unlock`], so a failed unlock (a
+/// dropped connection, a mistyped mailbox password) can be retried on the
+/// same session without asking for the password and code again.
 pub enum Step {
     /// Ask for a second-factor code and pass it to [`Pending::second_factor`].
     SecondFactor(Pending),
     /// Ask for the mailbox password and pass it to [`Pending::mailbox_password`].
     MailboxPassword(Pending),
-    /// Signed in, keys unlocked. Store it.
-    Unlocked(Unlocked),
+    /// The account has one password and it was accepted: call
+    /// [`Pending::unlock`].
+    Unlock(Pending),
 }
 
 /// A sign-in waiting on the user.
@@ -146,7 +153,7 @@ pub async fn begin(
         }
         return Ok(Step::SecondFactor(pending));
     }
-    pending.after_second_factor().await
+    Ok(pending.after_second_factor())
 }
 
 impl Pending {
@@ -168,7 +175,7 @@ impl Pending {
                 }
                 other => other.into(),
             })?;
-        self.after_second_factor().await
+        Ok(self.after_second_factor())
     }
 
     /// Submit the mailbox password. By reference: a wrong one is detected on
@@ -177,13 +184,17 @@ impl Pending {
         unlock(self.session.clone(), mailbox_password).await
     }
 
-    async fn after_second_factor(self) -> Result<Step, SignInError> {
-        if self.session.password_mode() == PasswordMode::Dual {
-            return Ok(Step::MailboxPassword(self));
+    /// Unlock the keys with the login password, on an account that has one
+    /// password. By reference, so a failure can be retried.
+    pub async fn unlock(&self) -> Result<Unlocked, SignInError> {
+        unlock(self.session.clone(), &self.password).await
+    }
+
+    fn after_second_factor(self) -> Step {
+        match self.session.password_mode() {
+            PasswordMode::Dual => Step::MailboxPassword(self),
+            PasswordMode::Single => Step::Unlock(self),
         }
-        unlock(self.session.clone(), &self.password)
-            .await
-            .map(Step::Unlocked)
     }
 }
 
