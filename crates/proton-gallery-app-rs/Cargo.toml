@@ -1,0 +1,39 @@
+[package]
+name = "proton-gallery-app-rs"
+description = "Gallery application services (sync, media, video, albums, sharing) shared by Proton desktop and mobile apps"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+authors.workspace = true
+keywords.workspace = true
+categories.workspace = true
+readme = "README.md"
+
+[dependencies]
+futures-util = { version = "0.3", default-features = false, features = ["std"] }
+proton-gallery-rs.workspace = true
+async-trait.workspace = true
+proton-gallery-drive-rs.workspace = true
+proton-drive-rs.workspace = true
+proton-sdk.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+hex.workspace = true
+zeroize.workspace = true
+tokio.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+tempfile.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+tokio = { workspace = true, features = ["test-util"] }
+
+[lints]
+workspace = true
+
+[target.'cfg(target_os = "linux")'.dependencies]
+tokio = { workspace = true, features = ["process"] }

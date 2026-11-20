@@ -1,0 +1,55 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/proton-rs",
+    "crates/proton-gallery-rs",
+    "crates/proton-gallery-drive-rs",
+    "crates/proton-gallery-app-rs",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.96"
+license = "MIT"
+authors = ["Nils Pukropp <contact@narl.io>"]
+repository = "https://github.com/narrrl/proton-rs"
+homepage = "https://github.com/narrrl/proton-rs"
+keywords = ["proton", "drive", "photos", "gallery"]
+categories = ["multimedia::images", "database"]
+
+[workspace.dependencies]
+# Internal crates. Each carries a version so it can be published; consumers
+# get them from crates.io.
+proton-gallery-rs = { path = "crates/proton-gallery-rs", version = "0.1.0" }
+proton-gallery-drive-rs = { path = "crates/proton-gallery-drive-rs", version = "0.1.0" }
+proton-gallery-app-rs = { path = "crates/proton-gallery-app-rs", version = "0.1.0" }
+
+# Caret on the SDK, not `=`: any 0.12.x is API-compatible, and an exact pin
+# here would force every app into lockstep with this workspace's lockfile.
+proton-sdk = "0.12.1"
+proton-drive-rs = "0.12.1"
+
+aes-gcm = { version = "0.11", features = ["zeroize"] }
+async-trait = "0.1"
+getrandom = "0.4"
+hex = "0.4"
+# The whole suite links one bundled SQLite: cargo allows a single
+# `links = "sqlite3"` per graph, so every app must agree on this line.
+rusqlite = { version = "0.41", features = ["bundled"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.11"
+tempfile = "3"
+thiserror = "2"
+tracing = "0.1"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "signal"] }
+tokio-util = { version = "0.7", features = ["rt"] }
+zeroize = "1"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[profile.dev.package."*"]
+# Proton's crypto must be usable in development builds as well as releases.
+opt-level = 2

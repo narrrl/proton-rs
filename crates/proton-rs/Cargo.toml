@@ -1,0 +1,30 @@
+[package]
+name = "proton-rs"
+description = "Shared building blocks for Proton Drive apps (gallery core, Drive adapters), re-exported behind features"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+authors.workspace = true
+keywords.workspace = true
+categories.workspace = true
+readme = "README.md"
+
+[features]
+default = []
+gallery = ["dep:proton-gallery-rs"]
+gallery-drive = ["gallery", "dep:proton-gallery-drive-rs"]
+gallery-app = ["gallery-drive", "dep:proton-gallery-app-rs"]
+
+[dependencies]
+proton-gallery-rs = { workspace = true, optional = true }
+proton-gallery-drive-rs = { workspace = true, optional = true }
+proton-gallery-app-rs = { workspace = true, optional = true }
+
+[package.metadata.docs.rs]
+all-features = true
+
+[lints]
+workspace = true
