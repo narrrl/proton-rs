@@ -4,7 +4,7 @@ All notable changes to this workspace are documented here. The format follows
 [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/) and the crates
 follow semantic versioning.
 
-## proton-gallery-drive-rs [0.1.2] - Unreleased
+## proton-gallery-drive-rs [0.1.2] - 2026-11-20
 
 ### Changed
 
@@ -13,7 +13,7 @@ follow semantic versioning.
   messages, still never Proton's own text. The crate no longer depends on
   proton-auth-rs.
 
-## proton-auth-rs [0.1.2] - Unreleased
+## proton-auth-rs [0.1.2] - 2026-11-20
 
 ### Deprecated
 
