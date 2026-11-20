@@ -1,0 +1,54 @@
+[package]
+name = "proton-auth-rs"
+description = "Credential storage for Proton apps: one secret-store trait, chunking for small OS stores, and a keyring backend that survives Secret Service restarts"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+authors.workspace = true
+keywords = ["proton", "keyring", "credentials", "secret-service"]
+categories = ["authentication", "os"]
+readme = "README.md"
+
+[features]
+default = []
+# The OS credential store: Secret Service on Linux and the BSDs, Credential
+# Manager on Windows, the Keychain on macOS. Android and iOS apps bring their
+# own store through `SecretStore`.
+keyring = [
+    "dep:tracing",
+    "dep:keyring-core",
+    "dep:dbus-secret-service-keyring-store",
+    "dep:dbus-secret-service",
+    "dep:windows-native-keyring-store",
+    "dep:apple-native-keyring-store",
+]
+
+[dependencies]
+thiserror.workspace = true
+tracing = { workspace = true, optional = true }
+zeroize.workspace = true
+keyring-core = { version = "1", optional = true }
+
+[dev-dependencies]
+keyring-core = "1"
+
+[target.'cfg(any(target_os = "linux", target_os = "freebsd", target_os = "openbsd"))'.dependencies]
+dbus-secret-service-keyring-store = { version = "1", features = ["crypto-rust"], optional = true }
+# The client the store wraps, used directly to replace an item instead of
+# editing its secret, which oo7 before 0.7.0 kept only in memory.
+dbus-secret-service = { version = "4.1", features = ["crypto-rust"], optional = true }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+windows-native-keyring-store = { version = "1", optional = true }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+apple-native-keyring-store = { version = "1", features = ["keychain"], optional = true }
+
+[package.metadata.docs.rs]
+all-features = true
+
+[lints]
+workspace = true
