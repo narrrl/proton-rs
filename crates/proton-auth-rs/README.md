@@ -16,6 +16,12 @@ Proton Gallery, Proton Stream).
     in memory.
   On Linux this links libdbus: building needs `libdbus-1-dev` (Debian/Ubuntu)
   or `dbus-devel` (Fedora) and `pkg-config`.
+- `session` (feature `session`): the sign-in sequence over proton-sdk:
+  password (restarted with a solved CAPTCHA), second-factor code, mailbox
+  password, then key passphrases and salts. Security-key-only accounts, blocked
+  sign-ins and refused passwords come back as their own errors. Each app keeps
+  its own stored format; `SessionTokens` is the common part, with the resume
+  conversion.
 - `Chunked`: splits a value too long for one entry (Windows caps an entry at
   1280 UTF-16 units) across several.
 - `MemoryStore`: secrets for this process only.

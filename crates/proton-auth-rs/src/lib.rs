@@ -25,6 +25,8 @@ mod memory;
     any(target_os = "linux", target_os = "freebsd", target_os = "openbsd")
 ))]
 mod secret_service;
+#[cfg(feature = "session")]
+pub mod session;
 
 pub use chunked::{CHUNK_HEADER, Chunked, ENTRY_UNITS};
 #[cfg(all(

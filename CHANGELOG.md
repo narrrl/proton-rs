@@ -4,6 +4,19 @@ All notable changes to this workspace are documented here. The format follows
 [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/) and the crates
 follow semantic versioning.
 
+## proton-auth-rs [0.1.1] - Unreleased
+
+### Added
+
+- `session` (feature `session`): one copy of the sign-in sequence the apps
+  each had: `begin` (with an optional CAPTCHA credential),
+  `Pending::second_factor`, `Pending::mailbox_password` (retryable), and
+  `Unlocked` with the key passphrases and salts. `SignInError` separates
+  CAPTCHA gates, security-key-only accounts, blocked sign-ins, refused
+  passwords, wrong codes and wrong mailbox passwords. `SessionTokens` with
+  `capture` and `resume_parameters`, the password-mode wire mapping, and
+  `verification_token` for Proton's verification page messages.
+
 ## proton-media-rs [0.1.1] - 2026-11-20
 
 ### Added
