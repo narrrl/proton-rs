@@ -27,7 +27,7 @@ categories = ["multimedia::images", "database"]
 proton-gallery-rs = { path = "crates/proton-gallery-rs", version = "0.1.2" }
 proton-gallery-drive-rs = { path = "crates/proton-gallery-drive-rs", version = "0.1.0" }
 proton-gallery-app-rs = { path = "crates/proton-gallery-app-rs", version = "0.1.0" }
-proton-auth-rs = { path = "crates/proton-auth-rs", version = "0.1.0" }
+proton-auth-rs = { path = "crates/proton-auth-rs", version = "0.1.1" }
 proton-base-rs = { path = "crates/proton-base-rs", version = "0.1.0" }
 proton-media-rs = { path = "crates/proton-media-rs", version = "0.1.1" }
 

@@ -15,6 +15,7 @@ readme = "README.md"
 [features]
 default = []
 auth = ["dep:proton-auth-rs"]
+auth-session = ["auth", "proton-auth-rs/session"]
 auth-keyring = ["auth", "proton-auth-rs/keyring"]
 base = ["dep:proton-base-rs"]
 base-json = ["base", "proton-base-rs/json"]
