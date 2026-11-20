@@ -14,7 +14,8 @@ follow semantic versioning.
   `Pending::unlock` (both retryable on the same session), giving `Unlocked`
   with the key passphrases and salts. `SignInError` separates
   CAPTCHA gates, security-key-only accounts, blocked sign-ins, refused
-  passwords, wrong codes and wrong mailbox passwords. `SessionTokens` with
+  passwords, wrong codes and wrong mailbox passwords, and keeps Proton's
+  response on the first three for apps that word them themselves. `SessionTokens` with
   `capture` and `resume_parameters`, the password-mode wire mapping, and
   `verification_token` for Proton's verification page messages.
 
