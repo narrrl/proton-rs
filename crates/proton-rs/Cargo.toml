@@ -1,6 +1,6 @@
 [package]
 name = "proton-rs"
-description = "Shared building blocks for Proton Drive apps (credential storage, gallery core, Drive adapters), re-exported behind features"
+description = "Shared building blocks for Proton Drive apps (credential storage, SQLite migrations, gallery core, Drive adapters), re-exported behind features"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -16,12 +16,15 @@ readme = "README.md"
 default = []
 auth = ["dep:proton-auth-rs"]
 auth-keyring = ["auth", "proton-auth-rs/keyring"]
+base = ["dep:proton-base-rs"]
+base-json = ["base", "proton-base-rs/json"]
 gallery = ["dep:proton-gallery-rs"]
 gallery-drive = ["gallery", "dep:proton-gallery-drive-rs"]
 gallery-app = ["gallery-drive", "dep:proton-gallery-app-rs"]
 
 [dependencies]
 proton-auth-rs = { workspace = true, optional = true }
+proton-base-rs = { workspace = true, optional = true }
 proton-gallery-rs = { workspace = true, optional = true }
 proton-gallery-drive-rs = { workspace = true, optional = true }
 proton-gallery-app-rs = { workspace = true, optional = true }

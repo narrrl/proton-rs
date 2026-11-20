@@ -6,6 +6,8 @@
 
 #[cfg(feature = "auth")]
 pub use proton_auth_rs as auth;
+#[cfg(feature = "base")]
+pub use proton_base_rs as base;
 #[cfg(feature = "gallery-app")]
 pub use proton_gallery_app_rs as gallery_app;
 #[cfg(feature = "gallery-drive")]
