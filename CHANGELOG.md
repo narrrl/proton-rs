@@ -4,6 +4,14 @@ All notable changes to this workspace are documented here. The format follows
 [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/) and the crates
 follow semantic versioning.
 
+## proton-gallery-drive-rs [0.1.1] - Unreleased
+
+### Changed
+
+- Signing in runs through `proton_auth_rs::session`, the sequence the other
+  apps share. Same stored session, same messages, and still never Proton's
+  own text. A failed key unlock can still be retried on the same session.
+
 ## proton-auth-rs [0.1.1] - Unreleased
 
 ### Added

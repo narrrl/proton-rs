@@ -1,12 +1,13 @@
 //! Single-account authentication. Passwords live only in a pending attempt;
 //! only tokens and derived key passphrases enter the platform secret vault.
+use proton_auth_rs::session::{self, SessionTokens, SignInError, Step};
 use proton_drive_rs::ProtonDriveClient;
 use proton_gallery_rs::{CancellationToken, model::AccountId};
 use proton_sdk::{
     api::{HumanVerificationCredential, ResponseCode},
     error::ProtonError,
     http::Tokens,
-    session::{PasswordMode, ProtonApiSession, ResumeParameters},
+    session::ProtonApiSession,
 };
 use serde::{Deserialize, Serialize};
 use std::{
@@ -78,24 +79,18 @@ impl Saved {
         {
             return Err(AuthError("This saved session needs a fresh sign-in."));
         }
-        let session = ProtonApiSession::resume(
-            super::client_configuration(),
-            ResumeParameters {
-                session_id: self.session_id.clone().into(),
-                username: self.username.clone(),
-                user_id: self.user_id.clone().into(),
-                access_token: self.access_token.clone(),
-                refresh_token: self.refresh_token.clone(),
-                scopes: self.scopes.clone(),
-                is_waiting_for_second_factor_code: false,
-                password_mode: if self.password_mode == 1 {
-                    PasswordMode::Single
-                } else {
-                    PasswordMode::Dual
-                },
-            },
-        )
-        .map_err(|_| AuthError("The saved session couldn’t be restored. Sign in again."))?;
+        let tokens = SessionTokens {
+            session_id: self.session_id.clone(),
+            username: self.username.clone(),
+            user_id: self.user_id.clone(),
+            access_token: self.access_token.clone(),
+            refresh_token: self.refresh_token.clone(),
+            scopes: self.scopes.clone(),
+            password_mode: session::password_mode_from_wire(self.password_mode),
+        };
+        let session =
+            ProtonApiSession::resume(super::client_configuration(), tokens.resume_parameters())
+                .map_err(|_| AuthError("The saved session couldn’t be restored. Sign in again."))?;
         let drive = ProtonDriveClient::with_key_passphrases(
             &session,
             self.key_passphrases
@@ -115,13 +110,9 @@ struct Gate {
     generation: u64,
     failed: bool,
 }
-struct Pending {
-    session: ProtonApiSession,
-    password: Zeroizing<Vec<u8>>,
-}
 #[derive(Default)]
 struct State {
-    pending: Option<Pending>,
+    pending: Option<session::Pending>,
     verification: Option<(String, Zeroizing<Vec<u8>>)>,
     account: Option<Account>,
 }
@@ -295,7 +286,7 @@ impl AuthService {
             .account
             .take()
             .map(|a| a.session)
-            .or_else(|| state.pending.take().map(|p| p.session));
+            .or_else(|| state.pending.take().map(|p| p.session().clone()));
         *state = State::default();
         *self.active_id.write().unwrap() = None;
         *self.cancel.write().unwrap() = CancellationToken::new();
@@ -337,14 +328,18 @@ impl AuthService {
             self.publish(Stage::SignedOut, username.trim().to_owned(), None);
             (username.trim().to_owned(), password)
         };
+        let Ok(text) = std::str::from_utf8(&password) else {
+            self.publish(Stage::SignedOut, username, None);
+            return Err(AuthError("Enter your Proton username and password."));
+        };
         let mut credential = answer.map(HumanVerificationCredential::captcha);
         let cancel = self.cancel.read().unwrap().clone();
         let result = bounded(
             &cancel,
-            ProtonApiSession::begin_verified(
+            session::begin(
                 super::client_configuration(),
                 &username,
-                &password,
+                text,
                 credential.as_ref(),
             ),
         )
@@ -353,25 +348,8 @@ impl AuthService {
             c.token.zeroize();
         }
         match result {
-            Ok(Ok(session)) => {
-                let second = session.is_waiting_for_second_factor();
-                if second && !session.second_factor_methods().totp {
-                    return Err(AuthError(
-                        "This account requires a security key. Enable an authenticator app in Proton settings to sign in here.",
-                    ));
-                }
-                state.pending = Some(Pending { session, password });
-                if second {
-                    self.publish(Stage::SecondFactor, username, None);
-                    Ok(())
-                } else {
-                    self.advance(&mut state, &cancel).await
-                }
-            }
-            Ok(Err(ProtonError::Api(ref e)))
-                if e.human_verification().is_some_and(|v| v.supports_captcha()) =>
-            {
-                let challenge = e.human_verification().unwrap();
+            Ok(Ok(step)) => self.enter(&mut state, step, &cancel).await,
+            Ok(Err(SignInError::HumanVerification(challenge))) => {
                 // Construct a captcha-only URL; never interpolate server method names into URLs.
                 let challenge = proton_sdk::api::HumanVerification {
                     token: challenge.token,
@@ -387,7 +365,7 @@ impl AuthService {
             }
             Ok(Err(e)) => {
                 self.publish(Stage::SignedOut, username, None);
-                Err(friendly(&e))
+                Err(refused(&e))
             }
             Err(e) => {
                 self.publish(Stage::SignedOut, username, None);
@@ -403,42 +381,33 @@ impl AuthService {
             ));
         }
         let mut state = self.state.lock().await;
-        let mut pending = state
+        let pending = state
             .pending
             .take()
             .ok_or(AuthError("Start sign-in again."))?;
         let cancel = self.cancel.read().unwrap().clone();
-        let result = bounded(&cancel, pending.session.apply_second_factor_code(&code)).await;
-        if !matches!(result, Ok(Ok(()))) {
+        let Ok(Ok(step)) = bounded(&cancel, pending.second_factor(&code)).await else {
             self.publish(Stage::SignedOut, String::new(), None);
             return Err(AuthError(
                 "The code wasn’t accepted. Sign in again with a fresh code.",
             ));
-        }
-        state.pending = Some(pending);
-        self.advance(&mut state, &cancel).await
+        };
+        self.enter(&mut state, step, &cancel).await
     }
-    async fn advance(&self, state: &mut State, cancel: &CancellationToken) -> Result<()> {
-        let p = state
-            .pending
-            .as_mut()
-            .ok_or(AuthError("Start sign-in again."))?;
-        if p.session.password_mode() == PasswordMode::Dual {
-            p.password.zeroize();
-            self.publish(
-                Stage::MailboxPassword,
-                p.session.username().to_owned(),
-                None,
-            );
-            Ok(())
-        } else {
+    /// Keep the pending sign-in and show what it needs next.
+    async fn enter(&self, state: &mut State, step: Step, cancel: &CancellationToken) -> Result<()> {
+        let (stage, pending, unlock_now) = match step {
+            Step::SecondFactor(p) => (Stage::SecondFactor, p, false),
+            Step::MailboxPassword(p) => (Stage::MailboxPassword, p, false),
             // A failed unlock or vault write can retry with the already verified session.
-            self.publish(
-                Stage::MailboxPassword,
-                p.session.username().to_owned(),
-                None,
-            );
+            Step::Unlock(p) => (Stage::MailboxPassword, p, true),
+        };
+        self.publish(stage, pending.session().username().to_owned(), None);
+        state.pending = Some(pending);
+        if unlock_now {
             self.finish(state, None, cancel).await
+        } else {
+            Ok(())
         }
     }
     pub async fn mailbox_password(&self, password: Vec<u8>) -> Result<()> {
@@ -460,40 +429,37 @@ impl AuthService {
             .pending
             .as_ref()
             .ok_or(AuthError("Start sign-in again."))?;
-        let password = password.as_deref().unwrap_or(&pending.password);
-        let session = &pending.session;
-        let probe = ProtonDriveClient::new(session, password.to_vec());
-        let key_passphrases = bounded(cancel, async {
-            probe.account().unlock().await?;
-            let phrases = probe.account().key_passphrases().await?;
-            phrases
-                .iter()
-                .map(|(id, p)| {
-                    String::from_utf8(p.to_vec())
-                        .map(|p| (id.to_owned(), p))
-                        .map_err(|_| ProtonError::invalid_operation("invalid derived key"))
-                })
-                .collect::<std::result::Result<HashMap<_, _>, _>>()
+        let unlocked = bounded(cancel, async {
+            match password.as_deref() {
+                // The login password; the pending sign-in holds it.
+                None => pending.unlock().await,
+                Some(password) => match std::str::from_utf8(password) {
+                    Ok(password) => pending.mailbox_password(password).await,
+                    Err(_) => Err(SignInError::WrongMailboxPassword),
+                },
+            }
         })
         .await?
-        .map_err(|e| friendly(&e))?;
-        let Tokens {
-            access_token,
-            refresh_token,
-        } = session.current_tokens().await;
+        .map_err(|e| refused(&e))?;
+        let key_passphrases = unlocked
+            .key_passphrases
+            .iter()
+            .map(|(id, p)| {
+                String::from_utf8(p.to_vec())
+                    .map(|p| (id.to_owned(), p))
+                    .map_err(|_| friendly(&ProtonError::invalid_operation("invalid derived key")))
+            })
+            .collect::<Result<HashMap<_, _>>>()?;
+        let tokens = unlocked.tokens().await;
         let saved = Saved {
             version: 1,
-            session_id: session.session_id().as_str().to_owned(),
-            username: session.username().to_owned(),
-            user_id: session.user_id().as_str().to_owned(),
-            access_token,
-            refresh_token,
-            scopes: session.scopes().to_vec(),
-            password_mode: if session.password_mode() == PasswordMode::Single {
-                1
-            } else {
-                2
-            },
+            password_mode: session::password_mode_to_wire(tokens.password_mode),
+            session_id: tokens.session_id,
+            username: tokens.username,
+            user_id: tokens.user_id,
+            access_token: tokens.access_token,
+            refresh_token: tokens.refresh_token,
+            scopes: tokens.scopes,
             key_passphrases,
         };
         let (resumed, drive) = saved.restore()?;
@@ -537,6 +503,28 @@ pub fn cause_chain(error: &dyn std::error::Error) -> String {
         source = cause.source();
     }
     text
+}
+
+/// A failed sign-in step as a fixed message. Never the server's own text,
+/// which is what [`SignInError::Rejected`] carries.
+fn refused(error: &SignInError) -> AuthError {
+    match error {
+        SignInError::Proton(error) => friendly(error),
+        SignInError::SecurityKeyOnly => AuthError(
+            "This account requires a security key. Enable an authenticator app in Proton settings to sign in here.",
+        ),
+        SignInError::Blocked(_) => AuthError(
+            "Proton blocked this sign-in attempt. Try again later or check your account in Proton’s app.",
+        ),
+        SignInError::WrongCode(_) => {
+            AuthError("The code wasn’t accepted. Sign in again with a fresh code.")
+        }
+        SignInError::WrongMailboxPassword => friendly(&ProtonError::KeysLocked),
+        SignInError::HumanVerification(_) => {
+            AuthError("Proton requires a verification method this app doesn’t support yet.")
+        }
+        _ => AuthError("Sign-in couldn’t be completed. Check your details and try again."),
+    }
 }
 
 fn friendly(error: &ProtonError) -> AuthError {
@@ -693,6 +681,19 @@ mod tests {
             details: None,
         });
         assert!(!friendly(&e).to_string().contains("secret"));
+    }
+    #[test]
+    fn refused_sign_ins_never_echo_server_text() {
+        let api = |code, message: &str| proton_sdk::error::ProtonApiError {
+            code,
+            http_status: 422,
+            message: message.into(),
+            details: None,
+        };
+        let e = SignInError::Rejected(api(ResponseCode::Unknown, "secret server text"));
+        assert!(!refused(&e).to_string().contains("secret"));
+        let blocked = SignInError::Blocked(api(ResponseCode::Blocked, "secret"));
+        assert!(refused(&blocked).to_string().contains("blocked"));
     }
     #[tokio::test]
     async fn cancelling_verification_drops_its_credentials_and_rejects_late_tokens() {
