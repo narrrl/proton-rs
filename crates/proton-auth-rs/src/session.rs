@@ -35,7 +35,7 @@
 use proton_sdk::account::{AccountClient, KeyPassphrases, KeySalt};
 use proton_sdk::api::{HumanVerification, HumanVerificationCredential, ResponseCode};
 use proton_sdk::config::ProtonClientConfiguration;
-use proton_sdk::error::ProtonError;
+use proton_sdk::error::{ProtonApiError, ProtonError};
 use proton_sdk::http::Tokens;
 use proton_sdk::session::{PasswordMode, ProtonApiSession, ResumeParameters};
 
@@ -57,19 +57,23 @@ pub enum SignInError {
     )]
     SecurityKeyOnly,
     /// Proton blocks sign-ins from this app for now. Its own message claims
-    /// the app version is unsupported, which is not what is wrong.
+    /// the app version is unsupported, which is not what is wrong, so the
+    /// display text is this crate's; the response is kept for apps that word
+    /// it themselves.
     #[error(
         "Proton has blocked sign-ins from this app for now. Wait a while and try again, \
          or sign in once on proton.me first."
     )]
-    Blocked,
-    /// Proton refused the address and password, with its reason.
-    #[error("{0}")]
-    Rejected(String),
+    Blocked(ProtonApiError),
+    /// Proton refused the address and password. Displays Proton's reason,
+    /// which is written for people; apps that must not show server text can
+    /// use their own.
+    #[error("{}", rejected_text(.0))]
+    Rejected(ProtonApiError),
     /// The second-factor code was not accepted. Proton does not take a second
     /// try on the same half-made session: start over with [`begin`].
     #[error("That code was not accepted.")]
-    WrongCode,
+    WrongCode(ProtonApiError),
     /// The mailbox password did not unlock the account. The pending sign-in
     /// survives; ask again.
     #[error("That mailbox password did not unlock the account.")]
@@ -171,7 +175,7 @@ impl Pending {
             .await
             .map_err(|error| match error {
                 ProtonError::Api(api) if (400..500).contains(&api.http_status) => {
-                    SignInError::WrongCode
+                    SignInError::WrongCode(api)
                 }
                 other => other.into(),
             })?;
@@ -225,24 +229,29 @@ async fn unlock(
 /// Lift a CAPTCHA gate, a block and a refused password out of the generic
 /// API error.
 fn classify_begin_failure(error: ProtonError) -> SignInError {
-    if let ProtonError::Api(api) = &error {
-        if let Some(challenge) = api.human_verification()
-            && challenge.supports_captcha()
-        {
-            return SignInError::HumanVerification(Box::new(challenge));
-        }
-        if api.code == ResponseCode::Blocked {
-            return SignInError::Blocked;
-        }
-        if api.http_status == 422 && !api.is_human_verification_required() {
-            return SignInError::Rejected(if api.message.is_empty() {
-                "Proton did not accept that address and password".to_owned()
-            } else {
-                api.message.clone()
-            });
-        }
+    if let ProtonError::Api(api) = &error
+        && let Some(challenge) = api.human_verification()
+        && challenge.supports_captcha()
+    {
+        return SignInError::HumanVerification(Box::new(challenge));
     }
-    error.into()
+    match error {
+        ProtonError::Api(api) if api.code == ResponseCode::Blocked => SignInError::Blocked(api),
+        ProtonError::Api(api)
+            if api.http_status == 422 && !api.is_human_verification_required() =>
+        {
+            SignInError::Rejected(api)
+        }
+        other => other.into(),
+    }
+}
+
+fn rejected_text(api: &ProtonApiError) -> &str {
+    if api.message.is_empty() {
+        "Proton did not accept that address and password"
+    } else {
+        &api.message
+    }
 }
 
 /// The part of a stored session every app keeps: enough to resume it without
@@ -378,6 +387,32 @@ mod tests {
             !shown.contains("access") && !shown.contains("refresh"),
             "{shown}"
         );
+    }
+
+    fn api(code: ResponseCode, message: &str) -> ProtonError {
+        ProtonError::Api(ProtonApiError {
+            code,
+            http_status: 422,
+            message: message.to_owned(),
+            details: None,
+        })
+    }
+
+    #[test]
+    fn a_blocked_sign_in_keeps_the_response_but_not_its_wording() {
+        let error = classify_begin_failure(api(ResponseCode::Blocked, "Please update the app"));
+        assert!(matches!(&error, SignInError::Blocked(api) if api.code == ResponseCode::Blocked));
+        assert!(!error.to_string().contains("update"), "{error}");
+    }
+
+    #[test]
+    fn a_refused_password_shows_protons_reason() {
+        let error =
+            classify_begin_failure(api(ResponseCode::Unknown, "Incorrect login credentials"));
+        assert_eq!(error.to_string(), "Incorrect login credentials");
+        let silent = classify_begin_failure(api(ResponseCode::Unknown, ""));
+        assert!(matches!(silent, SignInError::Rejected(_)));
+        assert!(!silent.to_string().is_empty());
     }
 
     #[test]
