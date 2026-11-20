@@ -4,7 +4,7 @@ All notable changes to this workspace are documented here. The format follows
 [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/) and the crates
 follow semantic versioning.
 
-## proton-base-rs [0.1.0] - Unreleased
+## proton-base-rs [0.1.0] - 2026-11-20
 
 ### Added
 
@@ -16,10 +16,13 @@ follow semantic versioning.
   rename, directory sync), owner-only by default; `read_json`/`write_json`
   behind feature `json`.
 
+
+## proton-gallery-rs [0.1.2] - 2026-11-20
+
 ### Changed
 
-- proton-gallery-rs: the catalog migrates through `Schema`. Same steps, same
-  errors.
+- The catalog migrates through `proton_base_rs::Schema`. Same steps, same
+  application id, same errors.
 
 ## proton-auth-rs [0.1.0] - 2026-11-20
 
