@@ -19,6 +19,7 @@ of git revisions of each other.
 | `proton-gallery-app-rs` | Gallery application services: account, sync, media, video, albums, favorites, sharing, hosted mode |
 | `proton-auth-rs` | Credential storage: one `SecretStore` trait, chunking for small OS stores, and an OS keyring backend (feature `keyring`) that reconnects after a Secret Service restart and replaces items instead of editing them |
 | `proton-base-rs` | Plumbing: versioned SQLite migrations with an application-id guard, crash-safe atomic file writes, JSON config helpers (feature `json`). Pins the suite's `rusqlite` |
+| `proton-media-rs` | Media plumbing: block range maps, single-flight fetches, a crash-safe byte-budgeted disk block cache |
 
 ## Local development across repos
 
@@ -34,6 +35,7 @@ proton-gallery-drive-rs = { path = "proton-rs/crates/proton-gallery-drive-rs" }
 proton-gallery-app-rs = { path = "proton-rs/crates/proton-gallery-app-rs" }
 proton-auth-rs = { path = "proton-rs/crates/proton-auth-rs" }
 proton-base-rs = { path = "proton-rs/crates/proton-base-rs" }
+proton-media-rs = { path = "proton-rs/crates/proton-media-rs" }
 ```
 
 ## Performance

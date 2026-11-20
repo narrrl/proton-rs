@@ -4,6 +4,21 @@ All notable changes to this workspace are documented here. The format follows
 [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/) and the crates
 follow semantic versioning.
 
+## proton-media-rs [0.1.0] - Unreleased
+
+### Added
+
+- `BlockMap` and `splice`: byte ranges over blocks of known, possibly uneven,
+  sizes.
+- `SingleFlight`: one in-flight call per key; waiters get the leader's result
+  or its error message (`Shared`), and a cancelled leader never wedges a key.
+- `DiskCache`: byte-budgeted LRU block cache on disk with a length sidecar
+  written after the synced block, hashed paths and adoption of a previous
+  run's entries.
+
+All three moved from Proton Stream's `pstr-stream`, unchanged in behaviour and
+on-disk layout.
+
 ## proton-base-rs [0.1.0] - 2026-11-20
 
 ### Added
