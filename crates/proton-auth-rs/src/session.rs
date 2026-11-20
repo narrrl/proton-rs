@@ -1,5 +1,9 @@
 //! Signing in to a Proton account (feature `session`).
 //!
+//! **Deprecated since 0.1.2, removed in 0.2.0.** The same steps now live in
+//! the SDK as `proton_sdk::login` (proton-sdk 0.12.2); see the changelog for
+//! the name of each replacement.
+//!
 //! Every app ran the same steps in its own copy: password (restarted with a
 //! solved CAPTCHA when Proton asks), then a second-factor code, then a
 //! mailbox password on accounts that have one, then deriving the key
