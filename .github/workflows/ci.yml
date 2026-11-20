@@ -17,8 +17,9 @@ jobs:
       - run: cargo fmt --all -- --check
       - run: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
       - run: cargo test --workspace --all-features --locked
-  # The keyring backend has a code path per OS; build and test it on each.
-  auth:
+  # The keyring backend and the atomic writer have a code path per OS; build
+  # and test them on each.
+  platforms:
     strategy:
       fail-fast: false
       matrix:
@@ -30,5 +31,5 @@ jobs:
         with:
           components: clippy
       - uses: Swatinem/rust-cache@v2
-      - run: cargo clippy -p proton-auth-rs --all-targets --features keyring --locked -- -D warnings
-      - run: cargo test -p proton-auth-rs --features keyring --locked
+      - run: cargo clippy -p proton-auth-rs -p proton-base-rs --all-targets --features proton-auth-rs/keyring,proton-base-rs/json --locked -- -D warnings
+      - run: cargo test -p proton-auth-rs -p proton-base-rs --features proton-auth-rs/keyring,proton-base-rs/json --locked

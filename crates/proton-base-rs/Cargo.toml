@@ -1,0 +1,34 @@
+[package]
+name = "proton-base-rs"
+description = "Plumbing shared by Proton Drive apps: a versioned SQLite migration runner and crash-safe atomic file writes"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+authors.workspace = true
+keywords = ["proton", "sqlite", "migrations", "atomic-write"]
+categories = ["database", "filesystem"]
+readme = "README.md"
+
+[features]
+default = []
+# `read_json` / `write_json` on top of the atomic writer.
+json = ["dep:serde", "dep:serde_json"]
+
+[dependencies]
+rusqlite.workspace = true
+serde = { workspace = true, optional = true }
+serde_json = { workspace = true, optional = true }
+thiserror.workspace = true
+
+[dev-dependencies]
+serde = { workspace = true }
+tempfile.workspace = true
+
+[package.metadata.docs.rs]
+all-features = true
+
+[lints]
+workspace = true

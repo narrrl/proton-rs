@@ -4,7 +4,24 @@ All notable changes to this workspace are documented here. The format follows
 [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/) and the crates
 follow semantic versioning.
 
-## proton-auth-rs [0.1.0] - Unreleased
+## proton-base-rs [0.1.0] - Unreleased
+
+### Added
+
+- `Schema`: forward-only SQLite migrations in `PRAGMA user_version`, one
+  transaction per step (SQL or code), refusing databases from newer builds.
+  An optional `application_id` keeps an app from adopting a foreign or
+  nonempty unknown database.
+- `atomic::write`: crash-safe file replacement (unique temporary file, sync,
+  rename, directory sync), owner-only by default; `read_json`/`write_json`
+  behind feature `json`.
+
+### Changed
+
+- proton-gallery-rs: the catalog migrates through `Schema`. Same steps, same
+  errors.
+
+## proton-auth-rs [0.1.0] - 2026-11-20
 
 ### Added
 

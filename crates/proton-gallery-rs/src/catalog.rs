@@ -3,6 +3,7 @@
 //! Callers never execute SQL or wait for a filesystem on their UI thread.
 use std::path::{Path, PathBuf};
 
+use proton_base_rs::{Schema, Step};
 use rusqlite::{Connection, OptionalExtension, Transaction, params};
 use tokio::sync::{mpsc, oneshot};
 
@@ -11,8 +12,25 @@ use crate::model::*;
 use crate::source::SourcePage;
 use crate::{Error, Result};
 
-const SCHEMA_VERSION: u32 = 14;
 const APPLICATION_ID: u32 = 0x50474c59;
+/// Never edit a shipped step; append a new one.
+const SCHEMA: Schema = Schema::new(&[
+    Step::Sql(include_str!("schema_v1.sql")),
+    Step::Sql(include_str!("schema_v2.sql")),
+    Step::Sql(include_str!("schema_v3.sql")),
+    Step::Sql(include_str!("schema_v4.sql")),
+    Step::Sql(include_str!("schema_v5.sql")),
+    Step::Sql(include_str!("schema_v6.sql")),
+    Step::Sql(include_str!("schema_v7.sql")),
+    Step::Sql(include_str!("schema_v8.sql")),
+    Step::Sql(include_str!("schema_v9.sql")),
+    Step::Sql(include_str!("schema_v10.sql")),
+    Step::Sql(include_str!("schema_v11.sql")),
+    Step::Sql(include_str!("schema_v12.sql")),
+    Step::Sql(include_str!("schema_v13.sql")),
+    Step::Sql(include_str!("schema_v14.sql")),
+])
+.application_id(APPLICATION_ID);
 type Job = Box<dyn FnOnce(&mut Connection) + Send>;
 
 #[derive(Clone)]
@@ -476,124 +494,33 @@ fn open_connection(path: Option<&Path>) -> Result<Connection> {
         }
     };
     conn.busy_timeout(std::time::Duration::from_secs(3))?;
-    let version: u32 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
-    if version > SCHEMA_VERSION {
-        return Err(Error::NewerSchema {
-            found: version,
-            supported: SCHEMA_VERSION,
-        });
-    }
-    let id: u32 = conn.query_row("PRAGMA application_id", [], |r| r.get(0))?;
-    if id != 0 && id != APPLICATION_ID {
-        return Err(Error::Invalid(
-            "database belongs to another application".into(),
-        ));
-    }
-    if version == 0 {
-        let tables: i64 = conn.query_row(
-            "SELECT count(*) FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'",
-            [],
-            |r| r.get(0),
-        )?;
-        if tables != 0 {
-            return Err(Error::Invalid(
-                "refusing to initialize a nonempty unknown database".into(),
-            ));
-        }
-    } else if id != APPLICATION_ID {
-        return Err(Error::Invalid(
-            "catalog application identifier is missing".into(),
-        ));
-    }
+    SCHEMA.check(&conn).map_err(schema_error)?;
     conn.execute_batch(
         "PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA foreign_keys=ON;",
     )?;
-    if version == 0 {
-        let tx = conn.transaction()?;
-        tx.execute_batch(include_str!("schema_v1.sql"))?;
-        tx.pragma_update(None, "application_id", APPLICATION_ID)?;
-        tx.pragma_update(None, "user_version", 1)?;
-        tx.commit()?;
-    }
-    if version < 2 {
-        let tx = conn.transaction()?;
-        tx.execute_batch(include_str!("schema_v2.sql"))?;
-        tx.pragma_update(None, "user_version", 2)?;
-        tx.commit()?;
-    }
-    if version < 3 {
-        let tx = conn.transaction()?;
-        tx.execute_batch(include_str!("schema_v3.sql"))?;
-        tx.pragma_update(None, "user_version", 3)?;
-        tx.commit()?;
-    }
-    if version < 4 {
-        let tx = conn.transaction()?;
-        tx.execute_batch(include_str!("schema_v4.sql"))?;
-        tx.pragma_update(None, "user_version", 4)?;
-        tx.commit()?;
-    }
-    if version < 5 {
-        let tx = conn.transaction()?;
-        tx.execute_batch(include_str!("schema_v5.sql"))?;
-        tx.pragma_update(None, "user_version", 5)?;
-        tx.commit()?;
-    }
-    if version < 6 {
-        let tx = conn.transaction()?;
-        tx.execute_batch(include_str!("schema_v6.sql"))?;
-        tx.pragma_update(None, "user_version", 6)?;
-        tx.commit()?;
-    }
-    if version < 7 {
-        let tx = conn.transaction()?;
-        tx.execute_batch(include_str!("schema_v7.sql"))?;
-        tx.pragma_update(None, "user_version", 7)?;
-        tx.commit()?;
-    }
-    if version < 8 {
-        let tx = conn.transaction()?;
-        tx.execute_batch(include_str!("schema_v8.sql"))?;
-        tx.pragma_update(None, "user_version", 8)?;
-        tx.commit()?;
-    }
-    if version < 9 {
-        let tx = conn.transaction()?;
-        tx.execute_batch(include_str!("schema_v9.sql"))?;
-        tx.pragma_update(None, "user_version", 9)?;
-        tx.commit()?;
-    }
-    if version < 10 {
-        let tx = conn.transaction()?;
-        tx.execute_batch(include_str!("schema_v10.sql"))?;
-        tx.pragma_update(None, "user_version", 10)?;
-        tx.commit()?;
-    }
-    if version < 11 {
-        let tx = conn.transaction()?;
-        tx.execute_batch(include_str!("schema_v11.sql"))?;
-        tx.pragma_update(None, "user_version", 11)?;
-        tx.commit()?;
-    }
-    if version < 12 {
-        let tx = conn.transaction()?;
-        tx.execute_batch(include_str!("schema_v12.sql"))?;
-        tx.pragma_update(None, "user_version", 12)?;
-        tx.commit()?;
-    }
-    if version < 13 {
-        let tx = conn.transaction()?;
-        tx.execute_batch(include_str!("schema_v13.sql"))?;
-        tx.pragma_update(None, "user_version", 13)?;
-        tx.commit()?;
-    }
-    if version < 14 {
-        let tx = conn.transaction()?;
-        tx.execute_batch(include_str!("schema_v14.sql"))?;
-        tx.pragma_update(None, "user_version", SCHEMA_VERSION)?;
-        tx.commit()?;
-    }
+    SCHEMA.migrate(&mut conn).map_err(schema_error)?;
     Ok(conn)
+}
+
+/// Keep the catalog's own error variants and messages for schema refusals.
+fn schema_error(error: proton_base_rs::Error) -> Error {
+    match error {
+        proton_base_rs::Error::Sqlite(e) => Error::Database(e),
+        proton_base_rs::Error::Io(e) => Error::Io(e),
+        proton_base_rs::Error::NewerSchema { found, supported } => {
+            Error::NewerSchema { found, supported }
+        }
+        proton_base_rs::Error::ForeignDatabase { .. } => {
+            Error::Invalid("database belongs to another application".into())
+        }
+        proton_base_rs::Error::NotEmpty => {
+            Error::Invalid("refusing to initialize a nonempty unknown database".into())
+        }
+        proton_base_rs::Error::MissingApplicationId => {
+            Error::Invalid("catalog application identifier is missing".into())
+        }
+        other => Error::Invalid(other.to_string()),
+    }
 }
 
 fn sql_integer(value: u64) -> Result<i64> {

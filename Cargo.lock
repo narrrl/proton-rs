@@ -2299,6 +2299,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "proton-base-rs"
+version = "0.1.0"
+dependencies = [
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.21",
+]
+
+[[package]]
 name = "proton-drive-rs"
 version = "0.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2373,6 +2384,7 @@ dependencies = [
  "getrandom 0.4.3",
  "hex",
  "kamadak-exif",
+ "proton-base-rs",
  "rusqlite",
  "serde",
  "serde_json",
@@ -2391,6 +2403,7 @@ name = "proton-rs"
 version = "0.1.0"
 dependencies = [
  "proton-auth-rs",
+ "proton-base-rs",
  "proton-gallery-app-rs",
  "proton-gallery-drive-rs",
  "proton-gallery-rs",
