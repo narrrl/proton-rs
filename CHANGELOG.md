@@ -4,6 +4,16 @@ All notable changes to this workspace are documented here. The format follows
 [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/) and the crates
 follow semantic versioning.
 
+## proton-gallery-rs [0.1.3] - Unreleased
+
+### Changed
+
+- `places::cluster` finds the bubble a marker joins through a grid of cells
+  as wide as the farthest possible join, instead of comparing it against
+  every bubble so far. Same bubbles, same members, same order. With 100,000
+  markers spread out so that hundreds of bubbles show, a frame drops from
+  about 0.2-0.6 s to 25-60 ms.
+
 ## proton-gallery-drive-rs [0.1.2] - 2026-11-20
 
 ### Changed

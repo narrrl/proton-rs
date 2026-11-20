@@ -260,12 +260,43 @@ pub struct Bubble {
     pub members: Vec<usize>,
 }
 
+/// Most grid cells along either side of the screen; beyond it cells get
+/// wider (the outermost holds everything past it), never more numerous.
+const MAX_CELLS: usize = 256;
+
 /// Merge markers whose circles would overlap on screen, the one with the
 /// most photos claiming its neighbours (the first of equals, when counts
 /// tie). Markers off screen are left out.
+///
+/// Each marker joins the oldest bubble it overlaps, so the result depends on
+/// the order the bubbles were made in. Bubbles never move once made, only
+/// grow, and none can grow past the radius of every photo put together, so a
+/// grid of cells at least that wide (plus the widest marker's reach) finds
+/// every bubble a marker could join in the 3x3 cells around it. That keeps
+/// a frame close to linear in the number of markers instead of markers times
+/// bubbles, with the same bubbles as comparing against all of them.
 pub fn cluster(screen: &[(f64, f64)], counts: &[usize], width: f64, height: f64) -> Vec<Bubble> {
     let mut order: Vec<usize> = (0..screen.len()).collect();
     order.sort_by(|a, b| counts[*b].cmp(&counts[*a]));
+    let Some(&first) = order.first() else {
+        return Vec::new();
+    };
+    // The widest a bubble can get, and the farthest a marker reaches (the
+    // first has the most photos): a marker joins a bubble closer than their
+    // sum. The margin covers the rounding of the cell arithmetic.
+    let total = order
+        .iter()
+        .fold(0usize, |sum, &i| sum.saturating_add(counts[i]));
+    let widest = bubble_radius(counts[first]);
+    let size = (bubble_radius(total) + widest * 0.5) * 1.01 + 1.0;
+    // Every marker kept lies at least `-widest` from the top left. Clamping
+    // a cell number never pulls two neighbours more than one cell apart, so
+    // the outermost cells may hold more, but the 3x3 look-up stays complete.
+    let cells =
+        |extent: f64| (((extent + 2.0 * widest) / size).ceil() as usize).clamp(1, MAX_CELLS) + 1;
+    let (columns, rows) = (cells(width), cells(height));
+    let cell_of = |v: f64, last: usize| (((v + widest) / size).floor() as usize).min(last - 1);
+    let mut grid: Vec<Vec<usize>> = vec![Vec::new(); columns * rows];
     let mut bubbles: Vec<Bubble> = Vec::new();
     for index in order {
         let (x, y) = screen[index];
@@ -273,22 +304,58 @@ pub fn cluster(screen: &[(f64, f64)], counts: &[usize], width: f64, height: f64)
         if x < -reach || y < -reach || x > width + reach || y > height + reach {
             continue;
         }
-        match bubbles
-            .iter_mut()
-            .find(|b| (b.x - x).hypot(b.y - y) < b.radius + reach * 0.5)
-        {
-            Some(bubble) => {
+        let joins = |b: &Bubble| (b.x - x).hypot(b.y - y) < b.radius + reach * 0.5;
+        // A marker with a coordinate that is NaN or infinite joins nothing
+        // and nothing joins it, so its bubble stays out of the grid.
+        let cell =
+            (x.is_finite() && y.is_finite()).then(|| (cell_of(x, columns), cell_of(y, rows)));
+        let oldest = cell.and_then(|(column, row)| {
+            // Walk the neighbouring cells' lists together, oldest bubble
+            // first, and stop at the first that takes the marker: the same
+            // bubble a scan of all of them would find, after no more tests.
+            let mut lists: [&[usize]; 9] = [&[]; 9];
+            let mut used = 0;
+            for r in row.saturating_sub(1)..=(row + 1).min(rows - 1) {
+                for c in column.saturating_sub(1)..=(column + 1).min(columns - 1) {
+                    let list = grid[r * columns + c].as_slice();
+                    if !list.is_empty() {
+                        lists[used] = list;
+                        used += 1;
+                    }
+                }
+            }
+            let lists = &mut lists[..used];
+            loop {
+                let next = lists
+                    .iter_mut()
+                    .filter(|list| !list.is_empty())
+                    .min_by_key(|list| list[0])?;
+                let candidate = next[0];
+                *next = &next[1..];
+                if joins(&bubbles[candidate]) {
+                    return Some(candidate);
+                }
+            }
+        });
+        match oldest {
+            Some(found) => {
+                let bubble = &mut bubbles[found];
                 bubble.photos += counts[index];
                 bubble.radius = bubble_radius(bubble.photos);
                 bubble.members.push(index);
             }
-            None => bubbles.push(Bubble {
-                x,
-                y,
-                radius: reach,
-                photos: counts[index],
-                members: vec![index],
-            }),
+            None => {
+                if let Some((column, row)) = cell {
+                    grid[row * columns + column].push(bubbles.len());
+                }
+                bubbles.push(Bubble {
+                    x,
+                    y,
+                    radius: reach,
+                    photos: counts[index],
+                    members: vec![index],
+                });
+            }
         }
     }
     // Smallest last, so a small marker next to a big one stays clickable.
@@ -591,5 +658,226 @@ mod map_tests {
                 .unwrap()
                 .is_empty()
         );
+    }
+}
+
+#[cfg(test)]
+mod cluster_tests {
+    use super::*;
+    use std::time::{Duration, Instant};
+
+    /// The plain greedy merge `cluster` replaced: every marker is compared
+    /// against every bubble made so far.
+    fn reference(screen: &[(f64, f64)], counts: &[usize], width: f64, height: f64) -> Vec<Bubble> {
+        let mut order: Vec<usize> = (0..screen.len()).collect();
+        order.sort_by(|a, b| counts[*b].cmp(&counts[*a]));
+        let mut bubbles: Vec<Bubble> = Vec::new();
+        for index in order {
+            let (x, y) = screen[index];
+            let reach = bubble_radius(counts[index]);
+            if x < -reach || y < -reach || x > width + reach || y > height + reach {
+                continue;
+            }
+            match bubbles
+                .iter_mut()
+                .find(|b| (b.x - x).hypot(b.y - y) < b.radius + reach * 0.5)
+            {
+                Some(bubble) => {
+                    bubble.photos += counts[index];
+                    bubble.radius = bubble_radius(bubble.photos);
+                    bubble.members.push(index);
+                }
+                None => bubbles.push(Bubble {
+                    x,
+                    y,
+                    radius: reach,
+                    photos: counts[index],
+                    members: vec![index],
+                }),
+            }
+        }
+        bubbles.sort_by(|a, b| b.radius.total_cmp(&a.radius));
+        bubbles
+    }
+
+    /// xorshift64*, enough to scatter test points the same way every run.
+    struct Rng(u64);
+
+    impl Rng {
+        fn next(&mut self) -> u64 {
+            self.0 ^= self.0 >> 12;
+            self.0 ^= self.0 << 25;
+            self.0 ^= self.0 >> 27;
+            self.0.wrapping_mul(0x2545_F491_4F6C_DD1D)
+        }
+
+        fn below(&mut self, n: u64) -> u64 {
+            self.next() % n
+        }
+
+        fn unit(&mut self) -> f64 {
+            (self.next() >> 11) as f64 / (1u64 << 53) as f64
+        }
+    }
+
+    type Shape = Vec<(u64, u64, u64, usize, Vec<usize>)>;
+
+    fn shape(bubbles: &[Bubble]) -> Shape {
+        bubbles
+            .iter()
+            .map(|b| {
+                (
+                    b.x.to_bits(),
+                    b.y.to_bits(),
+                    b.radius.to_bits(),
+                    b.photos,
+                    b.members.clone(),
+                )
+            })
+            .collect()
+    }
+
+    /// Markers around a few hot spots plus a uniform scatter, some of them
+    /// on cell edges, off screen, or not numbers at all.
+    fn scene(rng: &mut Rng, n: usize, width: f64, height: f64) -> (Vec<(f64, f64)>, Vec<usize>) {
+        let spots: Vec<(f64, f64, f64)> = (0..1 + rng.below(8))
+            .map(|_| {
+                (
+                    rng.unit() * width,
+                    rng.unit() * height,
+                    1.0 + rng.unit() * 200.0,
+                )
+            })
+            .collect();
+        let heavy = rng.below(3);
+        let screen = (0..n)
+            .map(|_| match rng.below(20) {
+                0 => (f64::NAN, rng.unit() * height),
+                1 => (rng.unit() * width, f64::INFINITY),
+                2 => ((rng.below(40) as f64) * 25.0, (rng.below(40) as f64) * 25.0),
+                3 => (
+                    rng.unit() * 3.0 * width - width,
+                    rng.unit() * 3.0 * height - height,
+                ),
+                4..=11 => {
+                    let (cx, cy, spread) = spots[rng.below(spots.len() as u64) as usize];
+                    (
+                        cx + (rng.unit() - 0.5) * spread,
+                        cy + (rng.unit() - 0.5) * spread,
+                    )
+                }
+                _ => (rng.unit() * width, rng.unit() * height),
+            })
+            .collect();
+        let counts = (0..n)
+            .map(|_| match heavy {
+                0 => 1,
+                1 => 1 + rng.below(5) as usize,
+                _ => {
+                    let bits = rng.below(16);
+                    1 + rng.below(1 << bits) as usize
+                }
+            })
+            .collect();
+        (screen, counts)
+    }
+
+    #[test]
+    fn grid_clustering_matches_the_plain_greedy_merge() {
+        let mut rng = Rng(0x9E37_79B9_7F4A_7C15);
+        for round in 0..400 {
+            let n = rng.below(if round % 10 == 0 { 3000 } else { 300 }) as usize;
+            let (width, height) = match round % 7 {
+                0 => (f64::INFINITY, f64::INFINITY),
+                1 => (50.0, 50.0),
+                // Wider than the grid has cells for, so cells stretch.
+                2 => (100_000.0, 60_000.0),
+                _ => (100.0 + rng.unit() * 2000.0, 100.0 + rng.unit() * 2000.0),
+            };
+            let (w, h) = (width.min(100_000.0), height.min(100_000.0));
+            let (mut screen, counts) = scene(&mut rng, n, w, h);
+            if round % 13 == 0 {
+                // Far beyond any real screen, where cells lose precision.
+                for point in screen.iter_mut().step_by(7) {
+                    *point = (point.0 * 1e10, point.1 * -1e13);
+                }
+            }
+            assert_eq!(
+                shape(&cluster(&screen, &counts, width, height)),
+                shape(&reference(&screen, &counts, width, height)),
+                "round {round}, {n} markers on {width}x{height}"
+            );
+        }
+        assert!(cluster(&[], &[], 100.0, 100.0).is_empty());
+    }
+
+    /// 100k photos, once around a few dozen towns and once spread evenly
+    /// over the land, drawn at zoom levels from the whole world to a
+    /// street. Prints the fastest of several runs of each. Run with
+    /// `cargo test --release -p proton-gallery-rs --lib -- --ignored --nocapture cluster_timing`.
+    #[test]
+    #[ignore = "timing, not a check"]
+    fn cluster_timing() {
+        let mut rng = Rng(42);
+        let towns: Vec<World> = (0..60)
+            .map(|_| World {
+                x: rng.unit(),
+                y: 0.25 + rng.unit() * 0.5,
+            })
+            .collect();
+        let clustered: Vec<World> = (0..100_000)
+            .map(|_| {
+                let town = towns[rng.below(towns.len() as u64) as usize];
+                let spread = 10f64.powf(-2.0 - rng.unit() * 3.0);
+                World {
+                    x: town.x + (rng.unit() - 0.5) * spread,
+                    y: town.y + (rng.unit() - 0.5) * spread,
+                }
+            })
+            .collect();
+        let even: Vec<World> = (0..100_000)
+            .map(|_| World {
+                x: rng.unit(),
+                y: 0.25 + rng.unit() * 0.5,
+            })
+            .collect();
+        let counts = vec![1; 100_000];
+        let (width, height) = (1280.0, 800.0);
+        let fastest = |run: &dyn Fn() -> Vec<Bubble>| {
+            let start = Instant::now();
+            let mut best = Duration::MAX;
+            let mut bubbles = 0;
+            for _ in 0..50 {
+                let lap = Instant::now();
+                bubbles = run().len();
+                best = best.min(lap.elapsed());
+                if start.elapsed() > Duration::from_secs(5) {
+                    break;
+                }
+            }
+            (best, bubbles)
+        };
+        for (name, world, center) in [
+            ("towns", &clustered, towns[0]),
+            ("even", &even, World { x: 0.5, y: 0.5 }),
+        ] {
+            for zoom in [0u32, 2, 4, 6, 8, 12, 16] {
+                let scale = 256.0 * f64::from(1u32 << zoom);
+                let screen: Vec<(f64, f64)> = world
+                    .iter()
+                    .map(|p| {
+                        (
+                            (p.x - center.x) * scale + width / 2.0,
+                            (p.y - center.y) * scale + height / 2.0,
+                        )
+                    })
+                    .collect();
+                let (grid, bubbles) = fastest(&|| cluster(&screen, &counts, width, height));
+                let (plain, _) = fastest(&|| reference(&screen, &counts, width, height));
+                println!(
+                    "{name:5} zoom {zoom:2}: {bubbles:5} bubbles, grid {grid:9.2?}, plain {plain:9.2?}"
+                );
+            }
+        }
     }
 }
