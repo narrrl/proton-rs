@@ -1,0 +1,29 @@
+[package]
+name = "proton-media-rs"
+description = "Media plumbing for Proton Drive apps: block range maps, single-flight fetches and a crash-safe, byte-budgeted disk block cache"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+keywords = ["proton", "cache", "streaming", "single-flight"]
+categories = ["caching", "multimedia"]
+readme = "README.md"
+
+[dependencies]
+lru = "0.18"
+sha2.workspace = true
+thiserror.workspace = true
+tokio = { workspace = true, features = ["fs", "io-util"] }
+tracing.workspace = true
+
+[dev-dependencies]
+futures = "0.3"
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "time"] }
+
+[package.metadata.docs.rs]
+all-features = true
+
+[lints]
+workspace = true

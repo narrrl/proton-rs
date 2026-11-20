@@ -14,3 +14,5 @@ pub use proton_gallery_app_rs as gallery_app;
 pub use proton_gallery_drive_rs as gallery_drive;
 #[cfg(feature = "gallery")]
 pub use proton_gallery_rs as gallery;
+#[cfg(feature = "media")]
+pub use proton_media_rs as media;

@@ -31,5 +31,5 @@ jobs:
         with:
           components: clippy
       - uses: Swatinem/rust-cache@v2
-      - run: cargo clippy -p proton-auth-rs -p proton-base-rs --all-targets --features proton-auth-rs/keyring,proton-base-rs/json --locked -- -D warnings
-      - run: cargo test -p proton-auth-rs -p proton-base-rs --features proton-auth-rs/keyring,proton-base-rs/json --locked
+      - run: cargo clippy -p proton-auth-rs -p proton-base-rs -p proton-media-rs --all-targets --features proton-auth-rs/keyring,proton-base-rs/json --locked -- -D warnings
+      - run: cargo test -p proton-auth-rs -p proton-base-rs -p proton-media-rs --features proton-auth-rs/keyring,proton-base-rs/json --locked
