@@ -5,6 +5,7 @@ members = [
     "crates/proton-gallery-rs",
     "crates/proton-gallery-drive-rs",
     "crates/proton-gallery-app-rs",
+    "crates/proton-auth-rs",
 ]
 
 [workspace.package]
@@ -24,6 +25,7 @@ categories = ["multimedia::images", "database"]
 proton-gallery-rs = { path = "crates/proton-gallery-rs", version = "0.1.1" }
 proton-gallery-drive-rs = { path = "crates/proton-gallery-drive-rs", version = "0.1.0" }
 proton-gallery-app-rs = { path = "crates/proton-gallery-app-rs", version = "0.1.0" }
+proton-auth-rs = { path = "crates/proton-auth-rs", version = "0.1.0" }
 
 # Caret on the SDK, not `=`: any 0.12.x is API-compatible, and an exact pin
 # here would force every app into lockstep with this workspace's lockfile.

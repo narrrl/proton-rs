@@ -17,6 +17,7 @@ of git revisions of each other.
 | `proton-gallery-rs` | SDK-free photo library core: SQLite catalog, timeline/outline, albums, justified grid, places |
 | `proton-gallery-drive-rs` | Proton Drive adapter for the gallery core (auth, Photos volume, Drive galleries) |
 | `proton-gallery-app-rs` | Gallery application services: account, sync, media, video, albums, favorites, sharing, hosted mode |
+| `proton-auth-rs` | Credential storage: one `SecretStore` trait, chunking for small OS stores, and an OS keyring backend (feature `keyring`) that reconnects after a Secret Service restart and replaces items instead of editing them |
 
 ## Local development across repos
 
@@ -30,6 +31,7 @@ all checkouts (cargo reads config from parent directories):
 proton-gallery-rs = { path = "proton-rs/crates/proton-gallery-rs" }
 proton-gallery-drive-rs = { path = "proton-rs/crates/proton-gallery-drive-rs" }
 proton-gallery-app-rs = { path = "proton-rs/crates/proton-gallery-app-rs" }
+proton-auth-rs = { path = "proton-rs/crates/proton-auth-rs" }
 ```
 
 ## Performance

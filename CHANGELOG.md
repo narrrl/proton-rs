@@ -4,6 +4,20 @@ All notable changes to this workspace are documented here. The format follows
 [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/) and the crates
 follow semantic versioning.
 
+## proton-auth-rs [0.1.0] - Unreleased
+
+### Added
+
+- `SecretStore`, the credential-store interface shared by the apps, with
+  `MemoryStore` and `Chunked` (splits values too long for one Windows
+  credential, compatible with what Proton Stream already stored).
+- `KeyringStore` (feature `keyring`) over `keyring-core`: Secret Service,
+  Windows Credential Manager and macOS Keychain. Reads entries written by
+  `keyring` 3. Reconnects once after a platform failure, and on the Secret
+  Service replaces an item instead of editing its secret (moved from
+  proton-drive-linux, where oo7 before 0.7.0 lost edited secrets on reboot).
+  `set_bytes`/`get_bytes` for secrets that are not text.
+
 ## proton-gallery-rs [0.1.1] - 2026-11-20
 
 ### Added
