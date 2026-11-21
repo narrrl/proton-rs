@@ -4,7 +4,7 @@ All notable changes to this workspace are documented here. The format follows
 [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/) and the crates
 follow semantic versioning.
 
-## proton-map-rs [0.1.0] - Unreleased
+## proton-map-rs [0.1.0] - 2026-11-21
 
 ### Added
 
@@ -14,7 +14,7 @@ follow semantic versioning.
   tile cache. The workspace's `basemap` tool builds the archive from Natural
   Earth and GeoNames. See `crates/proton-map-rs/CHANGELOG.md`.
 
-## proton-gallery-rs [Unreleased]
+## proton-gallery-rs [0.1.4] - 2026-11-21
 
 ### Added
 
