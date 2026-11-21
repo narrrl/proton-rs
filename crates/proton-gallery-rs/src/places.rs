@@ -264,9 +264,13 @@ pub struct Bubble {
 /// wider (the outermost holds everything past it), never more numerous.
 const MAX_CELLS: usize = 256;
 
+/// Space in px kept between two markers, so their rings never touch.
+pub const MARKER_GAP: f64 = 4.0;
+
 /// Merge markers whose circles would overlap on screen, the one with the
 /// most photos claiming its neighbours (the first of equals, when counts
-/// tie). Markers off screen are left out.
+/// tie). Markers off screen are left out. No two bubbles returned overlap:
+/// a bubble that grows into a neighbour swallows it.
 ///
 /// Each marker joins the oldest bubble it overlaps, so the result depends on
 /// the order the bubbles were made in. Bubbles never move once made, only
@@ -288,7 +292,7 @@ pub fn cluster(screen: &[(f64, f64)], counts: &[usize], width: f64, height: f64)
         .iter()
         .fold(0usize, |sum, &i| sum.saturating_add(counts[i]));
     let widest = bubble_radius(counts[first]);
-    let size = (bubble_radius(total) + widest * 0.5) * 1.01 + 1.0;
+    let size = (bubble_radius(total) + widest + MARKER_GAP) * 1.01 + 1.0;
     // Every marker kept lies at least `-widest` from the top left. Clamping
     // a cell number never pulls two neighbours more than one cell apart, so
     // the outermost cells may hold more, but the 3x3 look-up stays complete.
@@ -304,7 +308,7 @@ pub fn cluster(screen: &[(f64, f64)], counts: &[usize], width: f64, height: f64)
         if x < -reach || y < -reach || x > width + reach || y > height + reach {
             continue;
         }
-        let joins = |b: &Bubble| (b.x - x).hypot(b.y - y) < b.radius + reach * 0.5;
+        let joins = |b: &Bubble| (b.x - x).hypot(b.y - y) < b.radius + reach + MARKER_GAP;
         // A marker with a coordinate that is NaN or infinite joins nothing
         // and nothing joins it, so its bubble stays out of the grid.
         let cell =
@@ -358,9 +362,97 @@ pub fn cluster(screen: &[(f64, f64)], counts: &[usize], width: f64, height: f64)
             }
         }
     }
+    settle(&mut bubbles);
     // Smallest last, so a small marker next to a big one stays clickable.
     bubbles.sort_by(|a, b| b.radius.total_cmp(&a.radius));
     bubbles
+}
+
+fn overlap(a: &Bubble, b: &Bubble) -> bool {
+    (a.x - b.x).hypot(a.y - b.y) < a.radius + b.radius + MARKER_GAP
+}
+
+/// A bubble grows as markers join it and can grow into a neighbour made
+/// before. Merge such pairs, the one with more photos keeping its place,
+/// until none touch. Sweeps along x, so only bubbles within reach are
+/// compared.
+fn settle(bubbles: &mut Vec<Bubble>) {
+    loop {
+        let mut merged = false;
+        bubbles.sort_by(|a, b| a.x.total_cmp(&b.x));
+        let mut widest = bubbles
+            .iter()
+            .map(|b| b.radius)
+            .filter(|r| r.is_finite())
+            .fold(0.0, f64::max);
+        let mut i = 0;
+        while i < bubbles.len() {
+            let mut j = i + 1;
+            while j < bubbles.len()
+                && bubbles[j].x - bubbles[i].x < bubbles[i].radius + widest + MARKER_GAP
+            {
+                if !overlap(&bubbles[i], &bubbles[j]) {
+                    j += 1;
+                    continue;
+                }
+                let other = bubbles.remove(j);
+                let keep = &mut bubbles[i];
+                if other.photos > keep.photos {
+                    keep.x = other.x;
+                    keep.y = other.y;
+                }
+                keep.photos += other.photos;
+                keep.radius = bubble_radius(keep.photos);
+                keep.members.extend(other.members);
+                widest = widest.max(keep.radius);
+                merged = true;
+                j = i + 1;
+            }
+            i += 1;
+        }
+        if !merged {
+            return;
+        }
+    }
+}
+
+/// Which bubbles get a place name under them. `sizes` holds each bubble's
+/// label width and height in px (`None` for no label). Labels sit centred
+/// below their bubble; going from the most photos down, a label is shown
+/// only when it would cover no other bubble and no label already shown.
+pub fn place_labels(bubbles: &[Bubble], sizes: &[Option<(f64, f64)>]) -> Vec<bool> {
+    let label_box = |i: usize, (w, h): (f64, f64)| {
+        let b = &bubbles[i];
+        let top = b.y + b.radius + MARKER_GAP;
+        (b.x - w / 2.0, top, b.x + w / 2.0, top + h)
+    };
+    let hits_circle = |(l, t, r, btm): (f64, f64, f64, f64), b: &Bubble| {
+        let nx = b.x.clamp(l, r);
+        let ny = b.y.clamp(t, btm);
+        (nx - b.x).hypot(ny - b.y) < b.radius
+    };
+    let mut order: Vec<usize> = (0..bubbles.len()).collect();
+    order.sort_by(|a, b| bubbles[*b].photos.cmp(&bubbles[*a].photos));
+    let mut shown = vec![false; bubbles.len()];
+    let mut taken: Vec<(f64, f64, f64, f64)> = Vec::new();
+    for i in order {
+        let Some(size) = sizes.get(i).copied().flatten() else {
+            continue;
+        };
+        let rect = label_box(i, size);
+        let clear = bubbles
+            .iter()
+            .enumerate()
+            .all(|(j, b)| j == i || !hits_circle(rect, b))
+            && taken
+                .iter()
+                .all(|t| rect.2 <= t.0 || t.2 <= rect.0 || rect.3 <= t.1 || t.3 <= rect.1);
+        if clear {
+            taken.push(rect);
+            shown[i] = true;
+        }
+    }
+    shown
 }
 
 /// "7", "840", "1.2k", "35k": short enough to fit a marker. Digits and the
@@ -680,7 +772,7 @@ mod cluster_tests {
             }
             match bubbles
                 .iter_mut()
-                .find(|b| (b.x - x).hypot(b.y - y) < b.radius + reach * 0.5)
+                .find(|b| (b.x - x).hypot(b.y - y) < b.radius + reach + MARKER_GAP)
             {
                 Some(bubble) => {
                     bubble.photos += counts[index];
@@ -696,6 +788,7 @@ mod cluster_tests {
                 }),
             }
         }
+        settle(&mut bubbles);
         bubbles.sort_by(|a, b| b.radius.total_cmp(&a.radius));
         bubbles
     }
@@ -809,6 +902,40 @@ mod cluster_tests {
             );
         }
         assert!(cluster(&[], &[], 100.0, 100.0).is_empty());
+    }
+
+    #[test]
+    fn no_two_bubbles_touch() {
+        let mut rng = Rng(0x2545_F491_4F6C_DD1D);
+        for round in 0..200 {
+            let n = rng.below(400) as usize;
+            let (w, h) = (100.0 + rng.unit() * 1500.0, 100.0 + rng.unit() * 1500.0);
+            let (screen, counts) = scene(&mut rng, n, w, h);
+            let bubbles = cluster(&screen, &counts, w, h);
+            let total: usize = bubbles.iter().map(|b| b.members.len()).sum();
+            assert!(total <= n, "round {round}");
+            for (i, a) in bubbles.iter().enumerate() {
+                for b in &bubbles[i + 1..] {
+                    assert!(!overlap(a, b), "round {round}: {a:?} touches {b:?}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn labels_never_cover_each_other() {
+        let bubble = |x, y| Bubble {
+            x,
+            y,
+            radius: 20.0,
+            photos: 1,
+            members: vec![0],
+        };
+        let bubbles = [bubble(0.0, 0.0), bubble(30.0, 50.0), bubble(300.0, 0.0)];
+        let size = Some((80.0, 14.0));
+        let shown = place_labels(&bubbles, &[size, size, size]);
+        // The first label lies under the second bubble; the third is alone.
+        assert_eq!(shown, vec![false, true, true]);
     }
 
     /// 100k photos, once around a few dozen towns and once spread evenly
