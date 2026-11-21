@@ -4,6 +4,16 @@ All notable changes to this workspace are documented here. The format follows
 [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/) and the crates
 follow semantic versioning.
 
+## proton-map-rs [0.1.0] - Unreleased
+
+### Added
+
+- New crate: an offline vector basemap. A PMTiles v3 reader (and writer
+  behind feature `writer`), a vector tile decoder, a tiny-skia renderer with
+  light and dark styles and collision-free town labels, and a byte-budgeted
+  tile cache. The workspace's `basemap` tool builds the archive from Natural
+  Earth and GeoNames. See `crates/proton-map-rs/CHANGELOG.md`.
+
 ## proton-gallery-rs [Unreleased]
 
 ### Added

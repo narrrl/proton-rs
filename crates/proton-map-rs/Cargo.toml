@@ -1,0 +1,40 @@
+[package]
+name = "proton-map-rs"
+description = "Offline vector basemap for Proton apps: PMTiles reader, MVT decoder and an anti-aliased raster tile renderer"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+keywords = ["map", "pmtiles", "mvt", "tiles", "offline"]
+categories = ["rendering", "graphics", "science::geo"]
+readme = "README.md"
+exclude = ["*.pmtiles"]
+
+[lib]
+name = "proton_map"
+
+[features]
+# The PMTiles writer and the MVT encoder, for building basemaps and test
+# fixtures. Apps that only show the map leave it off.
+writer = []
+
+[dependencies]
+ab_glyph = "0.2.32"
+flate2 = "1.1"
+thiserror.workspace = true
+tiny-skia = { version = "0.11.4", default-features = false, features = ["std", "simd"] }
+
+[dev-dependencies]
+png = "0.18"
+proton-map-rs = { path = ".", features = ["writer"] }
+
+[[example]]
+name = "render_png"
+
+[[example]]
+name = "render_bench"
+
+[lints]
+workspace = true
