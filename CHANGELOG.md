@@ -14,6 +14,22 @@ follow semantic versioning.
   tile cache. The workspace's `basemap` tool builds the archive from Natural
   Earth and GeoNames. See `crates/proton-map-rs/CHANGELOG.md`.
 
+## proton-gallery-rs [Unreleased]
+
+### Added
+
+- `camera`: the Places map camera shared by the frontends. `Camera` pans,
+  zooms around a pointer, fits a set of points, converts between screen and
+  world coordinates, and lists the basemap tiles (`TileView`) that cover the
+  view at the closest tile level. `scale_bar` picks a round scale bar length.
+- `places::place_labels` decides which place names fit without covering
+  another marker or name.
+
+### Changed
+
+- `places::cluster` keeps markers `MARKER_GAP` px apart, and merges bubbles
+  that grew into each other, so no two markers overlap.
+
 ## proton-gallery-rs [0.1.3] - 2026-11-20
 
 ### Changed

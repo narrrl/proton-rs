@@ -2,6 +2,7 @@
 
 pub mod backup_albums;
 pub mod bytes;
+pub mod camera;
 pub mod catalog;
 pub mod configuration;
 pub mod error;
