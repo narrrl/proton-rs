@@ -5,7 +5,7 @@
 //! presentation settings, covers and paging reuse the folder-album code.
 //! An album's photos are memberships; the assets are shared with the
 //! timeline, and photos that live only in an album are added as assets too.
-use rusqlite::{Transaction, params};
+use rusqlite::{OptionalExtension, Transaction, params};
 
 use crate::catalog::Catalog;
 use crate::library::{Album, SourceKind};
@@ -14,7 +14,8 @@ use crate::{Error, Result};
 
 impl Catalog {
     /// Record one album as Proton lists it now: its name and every photo.
-    /// Photos no longer in it leave it.
+    /// Photos no longer in it leave it. The Photos revision of the album's
+    /// account and volume advances only when this changed what is shown.
     pub async fn sync_photo_album(&self, album: SourceSpec, assets: Vec<Asset>) -> Result<()> {
         if assets.len() > 200_000 {
             return Err(Error::Invalid("album exceeds bounds".into()));
@@ -27,6 +28,7 @@ impl Catalog {
                 "album item outside the album's account".into(),
             ));
         }
+        let renamed = self.source_payload_differs(&album).await?;
         self.register_source(album.clone()).await?;
         self.set_source_kind(album.id.clone(), SourceKind::Album)
             .await?;
@@ -43,10 +45,11 @@ impl Catalog {
             if album_removed {
                 return Ok(());
             }
-            tx.execute(
+            let mut changed = renamed;
+            changed |= tx.execute(
                 "INSERT OR IGNORE INTO album_nodes(gallery,source,parent) VALUES (?1,?1,NULL)",
                 [album.id.as_str()],
-            )?;
+            )? > 0;
             tx.execute_batch(
                 "CREATE TEMP TABLE IF NOT EXISTS album_listed(account TEXT NOT NULL, volume TEXT NOT NULL, node TEXT NOT NULL,
                     PRIMARY KEY(account,volume,node));
@@ -55,7 +58,8 @@ impl Catalog {
             {
                 let mut asset = tx.prepare_cached(
                     "INSERT INTO assets(account,volume,node,sort_time,payload) VALUES (?1,?2,?3,?4,?5)
-                     ON CONFLICT(account,volume,node) DO UPDATE SET sort_time=excluded.sort_time,payload=excluded.payload",
+                     ON CONFLICT(account,volume,node) DO UPDATE SET sort_time=excluded.sort_time,payload=excluded.payload
+                     WHERE assets.sort_time IS NOT excluded.sort_time OR assets.payload IS NOT excluded.payload",
                 )?;
                 let mut member = tx.prepare_cached(
                     "INSERT OR IGNORE INTO memberships(source,account,volume,node) VALUES (?1,?2,?3,?4)",
@@ -72,17 +76,20 @@ impl Catalog {
                     if removed.query_row(params![account,volume,node], |r| r.get::<_,bool>(0))? {
                         continue;
                     }
-                    asset.execute(params![account, volume, node, item.sort_time, payload])?;
-                    member.execute(params![album.id.as_str(), account, volume, node])?;
+                    changed |= asset.execute(params![account, volume, node, item.sort_time, payload])? > 0;
+                    changed |= member.execute(params![album.id.as_str(), account, volume, node])? > 0;
                     listed.execute(params![account, volume, node])?;
                 }
             }
-            tx.execute(
+            changed |= tx.execute(
                 "DELETE FROM memberships WHERE source=?1 AND NOT EXISTS(SELECT 1 FROM temp.album_listed l
                     WHERE (l.account,l.volume,l.node)=(memberships.account,memberships.volume,memberships.node))",
                 [album.id.as_str()],
-            )?;
+            )? > 0;
             tx.execute("DELETE FROM temp.album_listed", [])?;
+            if changed {
+                bump_photos_revision(&tx, &album)?;
+            }
             tx.commit()?;
             Ok(())
         })
@@ -211,8 +218,19 @@ impl Catalog {
     pub async fn forget_photo_album(&self, album: SourceId) -> Result<()> {
         self.run(move |conn| {
             let tx = conn.transaction()?;
-            tx.execute("DELETE FROM memberships WHERE source=?1", [album.as_str()])?;
-            tx.execute("DELETE FROM album_nodes WHERE gallery=?1", [album.as_str()])?;
+            let spec: Option<String> = tx
+                .query_row(
+                    "SELECT payload FROM sources WHERE id=?1",
+                    [album.as_str()],
+                    |r| r.get(0),
+                )
+                .optional()?;
+            let mut removed =
+                tx.execute("DELETE FROM memberships WHERE source=?1", [album.as_str()])?;
+            removed += tx.execute("DELETE FROM album_nodes WHERE gallery=?1", [album.as_str()])?;
+            if let (true, Some(spec)) = (removed > 0, spec) {
+                bump_photos_revision(&tx, &serde_json::from_str(&spec)?)?;
+            }
             tx.commit()?;
             Ok(())
         })
@@ -238,4 +256,34 @@ pub(crate) fn retain_photo_albums_tx(
         tx.execute("DELETE FROM album_nodes WHERE gallery=?1", [source])?;
     }
     Ok(gone.len() as u64)
+}
+
+/// Advance the Photos revision of the timeline that shares `album`'s
+/// account and volume, so open views reload.
+fn bump_photos_revision(tx: &Transaction<'_>, album: &SourceSpec) -> Result<()> {
+    tx.execute(
+        "UPDATE photos_sync SET revision=revision+1 WHERE source IN (
+         SELECT id FROM sources WHERE json_extract(payload,'$.account')=?1 AND json_extract(payload,'$.volume')=?2)",
+        params![album.account.as_str(), album.volume.as_str()],
+    )?;
+    Ok(())
+}
+
+impl Catalog {
+    /// Whether `source` is new or its stored record (such as its name) differs.
+    async fn source_payload_differs(&self, source: &SourceSpec) -> Result<bool> {
+        let id = source.id.clone();
+        let payload = serde_json::to_string(source)?;
+        self.run(move |conn| {
+            let previous: Option<String> = conn
+                .query_row(
+                    "SELECT payload FROM sources WHERE id=?1",
+                    [id.as_str()],
+                    |r| r.get(0),
+                )
+                .optional()?;
+            Ok(previous.as_deref() != Some(payload.as_str()))
+        })
+        .await
+    }
 }

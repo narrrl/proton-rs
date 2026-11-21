@@ -4,6 +4,16 @@ All notable changes to this workspace are documented here. The format follows
 [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/) and the crates
 follow semantic versioning.
 
+## proton-gallery-rs [0.1.5] - Unreleased
+
+### Fixed
+
+- Reconciling a Photos album no longer advances the Photos revision when the
+  album is unchanged. `sync_photo_album` and `forget_photo_album` advance it
+  only when the album's name or photos changed. Apps reload their open view
+  on every revision, so an account with many albums reset its timeline (and
+  dropped in-flight thumbnail loads) every few seconds during sync.
+
 ## proton-map-rs [0.1.0] - 2026-11-21
 
 ### Added

@@ -1,7 +1,7 @@
 [package]
 name = "proton-gallery-rs"
 description = "SDK-free photo library core for Proton apps: SQLite catalog, timeline, albums, justified grid, places"
-version = "0.1.4"
+version = "0.1.5"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true

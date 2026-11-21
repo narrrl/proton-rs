@@ -391,8 +391,8 @@ impl Catalog {
         self.run(move |conn| {
             let tx = conn.transaction()?;
             if done {
+                // `sync_photo_album` advanced the revision if the album changed.
                 tx.execute("DELETE FROM photos_album_pending WHERE source=?1 AND node=?2", params![source.as_str(),node.as_str()])?;
-                tx.execute("UPDATE photos_sync SET revision=revision+1 WHERE source=?1", [source.as_str()])?;
             } else {
                 tx.execute("UPDATE photos_album_pending SET attempts=attempts+1 WHERE source=?1 AND node=?2",
                     params![source.as_str(),node.as_str()])?;
@@ -560,6 +560,78 @@ mod tests {
             );
         }
         assert_eq!(catalog.source_count(source.id).await.unwrap(), 13_000);
+    }
+
+    #[tokio::test]
+    async fn reconciling_an_unchanged_album_keeps_the_revision() {
+        let catalog = Catalog::in_memory().await.unwrap();
+        let original = SyntheticSource::new(2).unwrap();
+        let source = original.spec().clone();
+        indexer::scan(
+            &catalog,
+            &original,
+            false,
+            &crate::CancellationToken::new(),
+            |_| {},
+        )
+        .await
+        .unwrap();
+        let (first, second) = (original.asset(0).unwrap(), original.asset(1).unwrap());
+        let album = SourceSpec {
+            id: SourceId::new("example-album").unwrap(),
+            root: NodeId::new("album-node").unwrap(),
+            ..source.clone()
+        };
+        seed(&catalog, &source, "e1").await;
+        let revision = |catalog: &Catalog| {
+            let id = source.id.clone();
+            let catalog = catalog.clone();
+            async move { catalog.photos_checkpoint(id).await.unwrap().revision }
+        };
+        let start = revision(&catalog).await;
+        catalog
+            .sync_photo_album(album.clone(), vec![first.clone()])
+            .await
+            .unwrap();
+        let added = revision(&catalog).await;
+        assert!(added > start, "a new album shows");
+
+        for _ in 0..3 {
+            catalog
+                .sync_photo_album(album.clone(), vec![first.clone()])
+                .await
+                .unwrap();
+            catalog
+                .finish_photos_album(source.id.clone(), album.root.clone(), true)
+                .await
+                .unwrap();
+        }
+        assert_eq!(revision(&catalog).await, added, "nothing changed");
+
+        catalog
+            .sync_photo_album(album.clone(), vec![first.clone(), second])
+            .await
+            .unwrap();
+        let grown = revision(&catalog).await;
+        assert!(grown > added, "a photo joined");
+        catalog
+            .sync_photo_album(album.clone(), vec![first.clone()])
+            .await
+            .unwrap();
+        let shrunk = revision(&catalog).await;
+        assert!(shrunk > grown, "a photo left");
+        let renamed = SourceSpec {
+            label: "Renamed".into(),
+            ..album.clone()
+        };
+        catalog
+            .sync_photo_album(renamed, vec![first])
+            .await
+            .unwrap();
+        assert!(revision(&catalog).await > shrunk, "the album was renamed");
+        let renamed = revision(&catalog).await;
+        catalog.forget_photo_album(album.id.clone()).await.unwrap();
+        assert!(revision(&catalog).await > renamed, "the album was removed");
     }
 
     #[tokio::test]
