@@ -4,6 +4,22 @@ All notable changes to this workspace are documented here. The format follows
 [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/) and the crates
 follow semantic versioning.
 
+## proton-media-rs [0.2.0] - 2026-11-22
+
+### Added
+
+- `stream`: seekable, cached byte streams over block-stored files, moved here
+  from Proton Stream's `pstr-stream`. `StreamSource` opens files through a
+  `RevisionOpener` and keeps open ones in an LRU with single-flight opens;
+  `RangeStream` serves byte ranges through a shared byte-budgeted memory ring
+  and the disk cache, reads ahead, and cancels read-ahead on a seek. Generic
+  over any `FileKey`, whose `Display` form keys the disk cache.
+- `stream::FileBlocks` (a finished download as a block source) and, behind the
+  new feature `drive`, `stream::RevisionBlocks` (a Proton revision, with a
+  block fetch retried when the SDK calls the failure retriable).
+- `Error::NotFound`, `Error::Shared` and `Error::Source`; `From<Shared>` for
+  `Error`.
+
 ## proton-gallery-rs [0.1.5] - 2026-11-21
 
 ### Fixed

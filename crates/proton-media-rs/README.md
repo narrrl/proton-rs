@@ -19,6 +19,11 @@ sizes, byte ranges and string identities, not on Proton types.
   cancelled does the work itself.
 - **`ImageCache`**: the same disk guarantees for encoded pictures (thumbnails,
   previews, posters), keyed by source, version and variant.
+- **`stream`**: seekable byte streams over block-stored files. A shared,
+  byte-budgeted memory ring in front of the disk cache, single-flight block
+  fetches, read-ahead that a seek cancels (measured: roughly 5x on worst-case
+  seek latency), and an LRU of open streams. Generic over the file key. Feature
+  `drive` adds `RevisionBlocks`, a Proton Drive revision as the block source.
 - **`render`** (feature `image`): decode with limits, apply EXIF orientation,
   shrink to fit, re-encode as JPEG (PNG when transparent).
 
