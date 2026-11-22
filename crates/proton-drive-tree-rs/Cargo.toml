@@ -1,0 +1,27 @@
+[package]
+name = "proton-drive-tree-rs"
+description = "Walking and watching Proton Drive folder trees: a parallel, retrying, cycle-safe crawl, one surface over public links and account folders, and a change feed that says when a crawled tree went stale"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+keywords = ["proton", "drive", "crawl", "events"]
+categories = ["filesystem", "asynchronous"]
+readme = "README.md"
+
+[dependencies]
+async-trait.workspace = true
+futures = "0.3"
+proton-drive-rs.workspace = true
+proton-sdk.workspace = true
+thiserror.workspace = true
+tokio = { workspace = true, features = ["time"] }
+tracing.workspace = true
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "time"] }
+
+[lints]
+workspace = true

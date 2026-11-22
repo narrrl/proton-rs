@@ -19,7 +19,8 @@ of git revisions of each other.
 | `proton-gallery-app-rs` | Gallery application services: account, sync, media, video, albums, favorites, sharing, hosted mode |
 | `proton-auth-rs` | Credential storage: one `SecretStore` trait, chunking for small OS stores, and an OS keyring backend (feature `keyring`) that reconnects after a Secret Service restart and replaces items instead of editing them |
 | `proton-base-rs` | Plumbing: versioned SQLite migrations with an application-id guard, crash-safe atomic file writes, JSON config helpers (feature `json`). Pins the suite's `rusqlite` |
-| `proton-media-rs` | Media plumbing: block range maps, single-flight fetches, a crash-safe byte-budgeted disk block cache |
+| `proton-media-rs` | Media plumbing: block range maps, single-flight fetches, a crash-safe byte-budgeted disk block cache, seekable cached byte streams |
+| `proton-drive-tree-rs` | Drive folder trees: one surface over public links and account folders, a parallel retrying cycle-safe walk, and the event feed read as "which crawled trees changed" |
 | `proton-map-rs` | Offline vector basemap: PMTiles reader, vector tile decoder, anti-aliased raster tile renderer with light and dark styles and town labels, tile cache. `tools/basemap` builds the archive from Natural Earth and GeoNames |
 
 ## Local development across repos
@@ -37,6 +38,7 @@ proton-gallery-app-rs = { path = "proton-rs/crates/proton-gallery-app-rs" }
 proton-auth-rs = { path = "proton-rs/crates/proton-auth-rs" }
 proton-base-rs = { path = "proton-rs/crates/proton-base-rs" }
 proton-media-rs = { path = "proton-rs/crates/proton-media-rs" }
+proton-drive-tree-rs = { path = "proton-rs/crates/proton-drive-tree-rs" }
 proton-map-rs = { path = "proton-rs/crates/proton-map-rs" }
 ```
 
