@@ -47,6 +47,20 @@ struct Listing {
     fingerprint: String,
 }
 
+impl Listing {
+    fn new(nodes: Vec<NodeUid>) -> Self {
+        let mut hash = Sha256::new();
+        for node in &nodes {
+            hash.update((node.link_id.as_str().len() as u64).to_le_bytes());
+            hash.update(node.link_id.as_str().as_bytes());
+        }
+        Self {
+            nodes,
+            fingerprint: hex::encode(hash.finalize()),
+        }
+    }
+}
+
 /// SDK 0.12 collects child IDs before returning them. This adapter bounds node
 /// decryption per page, but deliberately does not claim incremental ID listing.
 pub struct ProtonFolderSource {
@@ -68,17 +82,22 @@ impl ProtonFolderSource {
                     .enumerate_folder_children_node_uids(&folder)
                     .await
                     .map_err(|_| Error::Remote("could not list Proton folder children"))?;
-                let mut hash = Sha256::new();
-                for node in &nodes {
-                    hash.update((node.link_id.as_str().len() as u64).to_le_bytes());
-                    hash.update(node.link_id.as_str().as_bytes());
-                }
-                Ok(Listing {
-                    nodes,
-                    fingerprint: hex::encode(hash.finalize()),
-                })
+                Ok(Listing::new(nodes))
             })
             .await
+    }
+
+    /// A source whose child listing was already fetched, by a walk of the
+    /// tree it is in: indexing it then does not list the folder again.
+    pub(crate) fn listed(
+        client: ProtonDriveClient,
+        account: AccountId,
+        folder: &Node,
+        children: Vec<NodeUid>,
+    ) -> Result<Self> {
+        let source = Self::new(client, account, folder)?;
+        let _ = source.listing.set(Listing::new(children));
+        Ok(source)
     }
 
     pub async fn subfolders(&self, cancel: &CancellationToken) -> Result<Vec<Node>> {

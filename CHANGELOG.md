@@ -4,6 +4,27 @@ All notable changes to this workspace are documented here. The format follows
 [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/) and the crates
 follow semantic versioning.
 
+## proton-gallery-app-rs [0.1.1] - 2026-11-22
+
+### Changed
+
+- `App::poll_gallery_configuration` also keeps Drive galleries current: it
+  reads the change feed through `proton-drive-tree-rs`, and indexes a Drive
+  gallery again when a photo or subfolder in any of its folders changed, or
+  every Drive gallery after a gap in the feed. It returns `Some(false)` when it
+  did, so the front ends reload as they do after a settings change.
+
+## proton-gallery-drive-rs [0.1.3] - 2026-11-22
+
+### Changed
+
+- `galleries::scan_gallery` lists the folder tree with `proton-drive-tree-rs`'s
+  walk first: six folders at a time, with a listing that drops retried. It then
+  indexes each folder, root first and parents before children, without
+  listing it a second time. A folder reached twice is indexed once rather than
+  failing the scan with "Drive folder cycle or duplicate parent". The cap
+  stays at 10,000 albums.
+
 ## proton-drive-tree-rs [0.1.0] - 2026-11-22
 
 ### Added

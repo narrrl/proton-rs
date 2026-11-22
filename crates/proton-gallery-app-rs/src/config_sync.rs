@@ -1,8 +1,11 @@
 //! Versioned, immutable settings records stored in the account's Gallery device.
 use super::*;
-use proton_drive_rs::{Device, DeviceType, DriveEvent, ProtonDriveClient, ProtonPhotosClient};
+use proton_drive_rs::{Device, DeviceType, ProtonDriveClient, ProtonPhotosClient};
+use proton_drive_tree_rs::changes::{self, Poll, TreeIndex};
 use proton_gallery_rs::configuration::{RECORD_BYTES, Record};
+use proton_gallery_rs::library::Album;
 use proton_gallery_rs::model::PageSize;
+use proton_gallery_rs::model::SourceId;
 use proton_sdk::ids::{DriveEventId, NodeUid};
 use std::collections::{BTreeMap, btree_map::Entry};
 
@@ -177,14 +180,46 @@ impl ConfigStore {
     }
 }
 
+/// The root folders of the Drive galleries `polls` report a change in.
+fn changed_drive_galleries(albums: &[Album], polls: &[Poll]) -> Vec<NodeUid> {
+    let mut galleries: BTreeMap<&SourceId, (Option<NodeUid>, Vec<NodeUid>)> = BTreeMap::new();
+    for album in albums.iter().filter(|album| !album.photos_album) {
+        let uid = NodeUid::new(
+            album.source.volume.as_str().into(),
+            album.source.root.as_str().into(),
+        );
+        let (root, folders) = galleries.entry(&album.gallery).or_default();
+        if album.source.id == album.gallery {
+            *root = Some(uid.clone());
+        }
+        folders.push(uid);
+    }
+    galleries
+        .into_values()
+        .filter_map(|(root, folders)| {
+            let index = TreeIndex::new(folders.iter().map(|uid| (uid, true)));
+            polls
+                .iter()
+                .any(|poll| index.is_affected_by(poll))
+                .then_some(root)
+                .flatten()
+        })
+        .collect()
+}
+
 impl App {
     /// Background settings poll. An idle cursor does not enumerate devices,
-    /// settings files, or albums. These cursors track settings only; Photos
-    /// and Drive media scanning do not consume them.
+    /// settings files, or albums. These cursors track settings and Drive
+    /// galleries; Photos scanning does not consume them.
+    ///
+    /// A Drive gallery whose folders the feed reports a change in (a photo
+    /// added, removed or renamed, a subfolder added) is indexed again, and so
+    /// is every one after a gap in the feed. `Some` when anything was
+    /// refreshed: `true` when hidden-album visibility changed with it.
     pub async fn poll_gallery_configuration(&self, import_current: bool) -> Result<Option<bool>> {
         let _poll = self.configuration_poll.lock().await;
         let generation = self.generation();
-        let (account, cursors, changed) = {
+        let (account, cursors, changed, polls) = {
             let _operations = self.operations.read().await;
             let account = self.auth.account().await?;
             let saved = self
@@ -212,45 +247,59 @@ impl App {
                 }
                 let mut next = BTreeMap::new();
                 let mut changed = pending;
+                let mut polls = Vec::new();
                 for scope in scopes {
-                    let volume = scope.volume_id().as_str();
-                    let cursor = saved.get(volume).cloned().map(DriveEventId::from);
+                    let volume = scope.volume_id().as_str().to_owned();
+                    let cursor = saved.get(&volume).cloned().map(DriveEventId::from);
                     changed |= cursor.is_none();
-                    let events = account
-                        .drive
-                        .enumerate_events(&scope, cursor.as_ref())
+                    let poll = changes::poll(&account.drive, &scope, cursor.as_ref())
                         .await
                         .map_err(request_error("Couldn’t check for Gallery updates."))?;
-                    for event in &events {
-                        if !matches!(event, DriveEvent::CursorAdvanced { .. }) {
-                            changed = true;
-                            account
-                                .drive
-                                .invalidate_caches_for_event(event)
-                                .await
-                                .map_err(request_error("Couldn’t check newly changed settings."))?;
-                        }
-                    }
-                    if let Some(last) = events.last() {
-                        next.insert(volume.to_owned(), last.id().as_str().to_owned());
+                    changed |= !poll.is_quiet();
+                    next.insert(volume, poll.cursor.as_str().to_owned());
+                    // A first poll only seeds the cursor: what it would have
+                    // reported is what the last scan already saw.
+                    if cursor.is_some() {
+                        polls.push(poll);
                     }
                 }
-                Ok::<_, Error>((next, changed))
+                Ok::<_, Error>((next, changed, polls))
             };
-            let (cursors, changed) = tokio::select! {
+            let (cursors, changed, polls) = tokio::select! {
                 biased;
                 _ = account.cancel.cancelled() => return Err(Error::Cancelled),
                 result = tokio::time::timeout(std::time::Duration::from_secs(30), poll) =>
                     result.map_err(|_| Error::message("Proton took too long to check for changes."))??,
             };
-            (account.id, cursors, changed)
+            (account.id, cursors, changed, polls)
         };
         self.ensure_current(generation)?;
-        let result = if changed {
+        let mut result = if changed {
             Some(self.refresh_gallery_configuration(import_current).await?)
         } else {
             None
         };
+        if !polls.is_empty() {
+            let albums = {
+                let _operations = self.operations.read().await;
+                self.ensure_current(generation)?;
+                self.catalog
+                    .albums_scoped(None, None, Some(account.clone()))
+                    .await?
+            };
+            for root in changed_drive_galleries(&albums, &polls) {
+                self.ensure_current(generation)?;
+                match self.scan_drive_folder(root).await {
+                    Ok(_) => {
+                        result.get_or_insert(false);
+                    }
+                    Err(Error::Cancelled) => return Err(Error::Cancelled),
+                    Err(error) => {
+                        tracing::warn!("Couldn’t update a changed Drive gallery: {error}")
+                    }
+                }
+            }
+        }
         if !cursors.is_empty() {
             let _operations = self.operations.read().await;
             self.ensure_current(generation)?;
@@ -590,7 +639,7 @@ impl App {
                     .await
                     .map_err(request_error("Couldn’t read trial configuration changes."))?;
                 if events.iter().any(|event| {
-                    matches!(event, DriveEvent::NodeUpdated {
+                    matches!(event, proton_drive_rs::DriveEvent::NodeUpdated {
                     parent_node_uid: Some(parent), ..
                 } if parent == &store.root)
                 }) {
@@ -631,6 +680,84 @@ impl App {
             tracing::warn!("{error}");
         }
         result.and(cleanup)
+    }
+}
+
+#[cfg(test)]
+mod drive_gallery_changes {
+    use super::*;
+    use proton_drive_tree_rs::changes::Touch;
+    use proton_gallery_rs::model::{AccountId, NodeId, SourceSpec, VolumeId};
+
+    fn album(gallery: &str, folder: &str) -> Album {
+        Album {
+            gallery: SourceId::new(gallery).unwrap(),
+            source: SourceSpec {
+                id: SourceId::new(folder).unwrap(),
+                account: AccountId::new("account").unwrap(),
+                volume: VolumeId::new("volume").unwrap(),
+                root: NodeId::new(folder).unwrap(),
+                label: folder.into(),
+            },
+            parent: None,
+            photos_album: false,
+            direct_items: 0,
+            child_albums: 0,
+            settings: Default::default(),
+            cover: None,
+        }
+    }
+
+    /// Two galleries: `trips` with a subfolder `alps`, and `family`.
+    fn albums() -> Vec<Album> {
+        vec![
+            album("trips", "trips"),
+            album("trips", "alps"),
+            album("family", "family"),
+        ]
+    }
+
+    fn uid(link: &str) -> NodeUid {
+        NodeUid::new("volume".into(), link.into())
+    }
+
+    fn poll(node: &str, parent: &str, gap: bool) -> Poll {
+        Poll {
+            cursor: DriveEventId::new("cursor"),
+            touched: vec![Touch {
+                node: uid(node),
+                parent: Some(uid(parent)),
+                removed: false,
+            }],
+            gap,
+        }
+    }
+
+    #[test]
+    fn a_photo_added_to_a_subfolder_updates_only_its_gallery() {
+        let changed = changed_drive_galleries(&albums(), &[poll("photo", "alps", false)]);
+        assert_eq!(changed, [uid("trips")]);
+    }
+
+    #[test]
+    fn a_change_outside_every_gallery_updates_none() {
+        let changed = changed_drive_galleries(&albums(), &[poll("notes", "documents", false)]);
+        assert!(changed.is_empty());
+    }
+
+    #[test]
+    fn a_gap_in_the_feed_updates_every_gallery() {
+        let mut changed = changed_drive_galleries(&albums(), &[poll("notes", "documents", true)]);
+        changed.sort_by(|a, b| a.link_id.as_str().cmp(b.link_id.as_str()));
+        assert_eq!(changed, [uid("family"), uid("trips")]);
+    }
+
+    #[test]
+    fn photos_albums_are_not_drive_galleries() {
+        let mut photos = album("favourites", "favourites");
+        photos.photos_album = true;
+        let changed = changed_drive_galleries(&[photos], &[poll("photo", "favourites", true)]);
+        assert!(changed.is_empty());
     }
 }
 
