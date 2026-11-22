@@ -8,6 +8,8 @@
 pub use proton_auth_rs as auth;
 #[cfg(feature = "base")]
 pub use proton_base_rs as base;
+#[cfg(feature = "drive-tree")]
+pub use proton_drive_tree_rs as drive_tree;
 #[cfg(feature = "gallery-app")]
 pub use proton_gallery_app_rs as gallery_app;
 #[cfg(feature = "gallery-drive")]

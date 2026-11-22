@@ -22,6 +22,7 @@ base-json = ["base", "proton-base-rs/json"]
 media = ["dep:proton-media-rs"]
 media-image = ["media", "proton-media-rs/image"]
 media-drive = ["media", "proton-media-rs/drive"]
+drive-tree = ["dep:proton-drive-tree-rs"]
 gallery = ["dep:proton-gallery-rs"]
 gallery-drive = ["gallery", "dep:proton-gallery-drive-rs"]
 gallery-app = ["gallery-drive", "dep:proton-gallery-app-rs"]
@@ -30,6 +31,7 @@ gallery-app = ["gallery-drive", "dep:proton-gallery-app-rs"]
 proton-auth-rs = { workspace = true, optional = true }
 proton-base-rs = { workspace = true, optional = true }
 proton-media-rs = { workspace = true, optional = true }
+proton-drive-tree-rs = { workspace = true, optional = true }
 proton-gallery-rs = { workspace = true, optional = true }
 proton-gallery-drive-rs = { workspace = true, optional = true }
 proton-gallery-app-rs = { workspace = true, optional = true }

@@ -2534,6 +2534,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "proton-drive-tree-rs"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "futures",
+ "proton-drive-rs",
+ "proton-sdk",
+ "thiserror 2.0.21",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "proton-gallery-app-rs"
 version = "0.1.0"
 dependencies = [
@@ -2628,6 +2641,7 @@ version = "0.1.0"
 dependencies = [
  "proton-auth-rs",
  "proton-base-rs",
+ "proton-drive-tree-rs",
  "proton-gallery-app-rs",
  "proton-gallery-drive-rs",
  "proton-gallery-rs",
