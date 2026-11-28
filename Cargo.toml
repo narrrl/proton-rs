@@ -28,8 +28,8 @@ categories = ["multimedia::images", "database"]
 # Internal crates. Each carries a version so it can be published; consumers
 # get them from crates.io.
 proton-gallery-rs = { path = "crates/proton-gallery-rs", version = "0.1.5" }
-proton-gallery-drive-rs = { path = "crates/proton-gallery-drive-rs", version = "0.1.3" }
-proton-gallery-app-rs = { path = "crates/proton-gallery-app-rs", version = "0.1.1" }
+proton-gallery-drive-rs = { path = "crates/proton-gallery-drive-rs", version = "0.1.4" }
+proton-gallery-app-rs = { path = "crates/proton-gallery-app-rs", version = "0.1.2" }
 proton-auth-rs = { path = "crates/proton-auth-rs", version = "0.1.2" }
 proton-base-rs = { path = "crates/proton-base-rs", version = "0.1.0" }
 proton-media-rs = { path = "crates/proton-media-rs", version = "0.2.0" }
@@ -38,8 +38,8 @@ proton-drive-tree-rs = { path = "crates/proton-drive-tree-rs", version = "0.1.0"
 
 # Caret on the SDK, not `=`: any 0.12.x is API-compatible, and an exact pin
 # here would force every app into lockstep with this workspace's lockfile.
-proton-sdk = "0.12.2"
-proton-drive-rs = "0.12.2"
+proton-sdk = "0.12.9"
+proton-drive-rs = "0.12.9"
 
 aes-gcm = { version = "0.11", features = ["zeroize"] }
 async-trait = "0.1"

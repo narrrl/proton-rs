@@ -152,12 +152,23 @@ impl App {
         limit: usize,
     ) -> Result<Option<Vec<u8>>> {
         let _operations = self.operations.read().await;
+        let generation = self.generation();
         let account = self.auth.account().await?;
         self.owns(&account.id, key)?;
         let photos_volume = self.photos_volume(&account.id).await?;
+        let in_photos = photos_volume.as_ref() == Some(&key.volume);
+        // Proton said a moment ago that it has none: the caller's fallback
+        // is the only way to a picture, so do not ask again.
+        if in_photos
+            && self
+                .thumbnail_absence()
+                .known_absent(key, kind, std::time::Instant::now())
+        {
+            return Ok(None);
+        }
         let uid = proton_gallery_drive_rs::node_uid(key);
         let download = async {
-            if photos_volume.as_ref() == Some(&key.volume) {
+            if in_photos {
                 proton_drive_rs::ProtonPhotosClient::from_drive_client(account.drive.clone())
                     .download_thumbnail(&uid, kind)
                     .await
@@ -172,10 +183,57 @@ impl App {
                 Error::message("Couldn’t load this photo.")
             })?,
         };
+        if in_photos && self.generation() == generation {
+            self.thumbnail_absence()
+                .record(key, kind, bytes.is_some(), std::time::Instant::now());
+        }
         if bytes.as_ref().is_some_and(|b| b.len() > limit) {
             return Err(proton_gallery_rs::Error::Invalid("preview exceeds budget".into()).into());
         }
         Ok(bytes)
+    }
+
+    /// Which of `keys`, all on the signed-in account's Photos volume, have no
+    /// thumbnail at all, asked of Proton in batches without downloading any
+    /// image. The answer is remembered, so the grid's next look at those
+    /// photos goes straight to its own fallback.
+    ///
+    /// A diagnostic, not part of loading the grid: the grid already learns
+    /// the same from each thumbnail it asks for, and this costs requests of
+    /// its own. A key not returned is not known to have a thumbnail.
+    pub async fn find_missing_thumbnails(&self, keys: &[AssetKey]) -> Result<Vec<AssetKey>> {
+        let _operations = self.operations.read().await;
+        let generation = self.generation();
+        let account = self.auth.account().await?;
+        for key in keys {
+            self.owns(&account.id, key)?;
+        }
+        let source = self
+            .photos
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .as_ref()
+            .filter(|source| {
+                proton_gallery_rs::source::MediaSource::spec(source.as_ref()).account == account.id
+            })
+            .cloned()
+            .ok_or_else(|| Error::message("Proton Photos isn’t open yet."))?;
+        let missing = source.missing_thumbnails(keys, &account.cancel).await?;
+        self.ensure_current(generation)?;
+        let now = std::time::Instant::now();
+        let mut absence = self.thumbnail_absence();
+        for key in &missing {
+            absence.record_missing(key, now);
+        }
+        Ok(missing)
+    }
+
+    pub(crate) fn thumbnail_absence(
+        &self,
+    ) -> std::sync::MutexGuard<'_, crate::thumbnail_absence::ThumbnailAbsence> {
+        self.thumbnail_absence
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
     }
 
     /// Decrypt a Proton photo's or video's original into `directory` and

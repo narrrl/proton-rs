@@ -33,6 +33,7 @@ pub mod media;
 pub mod places;
 pub mod sharing;
 pub mod sync;
+pub mod thumbnail_absence;
 pub mod video;
 
 pub use account::{AccountState, SignInStage};
@@ -104,6 +105,8 @@ pub struct App {
     operations: tokio::sync::RwLock<()>,
     cleanup: RwLock<Option<Option<proton_gallery_rs::model::AccountId>>>,
     generation: AtomicU64,
+    /// Photos Proton said have no thumbnail ([`thumbnail_absence`]).
+    thumbnail_absence: std::sync::Mutex<thumbnail_absence::ThumbnailAbsence>,
     root: PathBuf,
 }
 
@@ -186,6 +189,7 @@ impl App {
             operations: tokio::sync::RwLock::new(()),
             cleanup: RwLock::new(cleanup),
             generation: AtomicU64::new(0),
+            thumbnail_absence: Default::default(),
             root,
         })
     }
@@ -211,6 +215,7 @@ impl App {
 
     /// Start a new generation: every result of the previous one is stale.
     fn advance(&self) -> Generation {
+        self.thumbnail_absence().clear();
         Generation(self.generation.fetch_add(1, Ordering::SeqCst) + 1)
     }
 }

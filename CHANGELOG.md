@@ -4,6 +4,37 @@ All notable changes to this workspace are documented here. The format follows
 [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/) and the crates
 follow semantic versioning.
 
+## proton-gallery-app-rs [0.1.2] - Unreleased
+
+### Added
+
+- `App::find_missing_thumbnails` asks Proton which Photos assets have no
+  thumbnail at all, in batches and without downloading an image. It is a
+  diagnostic and is never called while loading the grid.
+
+### Changed
+
+- A Photos thumbnail or preview that Proton has just said does not exist is
+  not asked for again. `App::thumbnail`, `small_thumbnail` and `preview`
+  return `None` at once for 30 minutes, so the caller goes straight to its
+  own fallback. The answer is kept in memory for at most 4,096 photos. A
+  Photos event for the photo, a gap in the event feed or a new session
+  drops it. A failed or timed-out request records nothing.
+- Built against `proton-sdk` and `proton-drive-rs` 0.12.9.
+
+## proton-gallery-drive-rs [0.1.4] - Unreleased
+
+### Added
+
+- `ProtonPhotosSource::missing_thumbnails` returns the assets among those
+  given that Proton reports without a thumbnail, through
+  `ProtonPhotosClient::find_missing_thumbnails`. Only returned keys count as
+  evidence. A failed call, an omitted key or a folder reports nothing.
+
+### Changed
+
+- Built against `proton-sdk` and `proton-drive-rs` 0.12.9.
+
 ## proton-gallery-app-rs [0.1.1] - 2026-11-22
 
 ### Changed
