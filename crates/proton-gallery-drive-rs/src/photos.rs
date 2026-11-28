@@ -70,6 +70,54 @@ impl ProtonPhotosSource {
             }
         }
     }
+
+    /// Which of `assets` have no thumbnail at all on their active revision,
+    /// as Proton reports it. Reads link details in batches, and a revision's
+    /// metadata only where the listing leaves its thumbnails out. Downloads
+    /// no image.
+    ///
+    /// An asset not returned is not known to have one: a failed call, a
+    /// node that went away or a folder is never reported. Only the returned
+    /// keys are evidence of absence, and only for the revision active now.
+    pub async fn missing_thumbnails(
+        &self,
+        assets: &[AssetKey],
+        cancel: &CancellationToken,
+    ) -> Result<Vec<AssetKey>> {
+        if assets
+            .iter()
+            .any(|a| a.account != self.spec.account || a.volume != self.spec.volume)
+        {
+            return Err(Error::Invalid(
+                "thumbnail check outside Photos scope".into(),
+            ));
+        }
+        if assets.is_empty() {
+            return Ok(Vec::new());
+        }
+        let uids: Vec<NodeUid> = assets.iter().map(super::node_uid).collect();
+        let missing = tokio::select! {
+            biased;
+            _ = cancel.cancelled() => return Err(Error::Cancelled),
+            result = self.client.find_missing_thumbnails(&uids) => result
+                .map_err(|_| Error::Remote("could not check Photos thumbnails"))?,
+        };
+        Ok(matching(assets, &missing))
+    }
+}
+
+/// The keys among `assets` whose node is in `missing`, in `assets`' order.
+/// A uid Proton returned that was not asked about is dropped.
+fn matching(assets: &[AssetKey], missing: &[NodeUid]) -> Vec<AssetKey> {
+    assets
+        .iter()
+        .filter(|a| {
+            missing.iter().any(|m| {
+                m.volume_id.as_str() == a.volume.as_str() && m.link_id.as_str() == a.node.as_str()
+            })
+        })
+        .cloned()
+        .collect()
 }
 
 #[async_trait]
@@ -149,6 +197,21 @@ fn project(account: &AccountId, node: Node, capture_time: i64) -> Result<Option<
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn only_asked_assets_proton_returned_count_as_missing() {
+        let account = AccountId::new("account").unwrap();
+        let key = |node: &str| AssetKey {
+            account: account.clone(),
+            volume: VolumeId::new("volume").unwrap(),
+            node: NodeId::new(node).unwrap(),
+        };
+        let uid = |node: &str| NodeUid::new("volume".into(), node.into());
+        let asked = [key("a"), key("b"), key("c")];
+        let found = matching(&asked, &[uid("c"), uid("stranger"), uid("a")]);
+        assert_eq!(found, [key("a"), key("c")]);
+        assert!(matching(&asked, &[]).is_empty());
+    }
+
     #[test]
     fn photos_use_capture_time_instead_of_drive_modification_time() {
         let node = super::super::tests::file("image/jpeg", "photo.jpg", Some(123));

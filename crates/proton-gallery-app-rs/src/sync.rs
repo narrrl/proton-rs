@@ -366,11 +366,15 @@ impl App {
                     ..
                 } => (node_uid, *is_trashed),
                 DriveEvent::ContinuityLost { .. } | DriveEvent::ScopeAccessLost { .. } => {
+                    self.thumbnail_absence().clear();
                     gap = true;
                     continue;
                 }
                 _ => continue,
             };
+            // A new revision may carry the thumbnail it lacked.
+            self.thumbnail_absence()
+                .forget_node(uid.volume_id.as_str(), uid.link_id.as_str());
             if uid.volume_id.as_str() == source.volume.as_str() {
                 let node = NodeId::new(uid.link_id.as_str())?;
                 changes.push(if removed {
